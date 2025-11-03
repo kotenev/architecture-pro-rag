@@ -1,5 +1,6 @@
 #! /usr/bin/env python
 
+import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -28,6 +29,10 @@ if not documents:
 
 print(f"Загружено {len(documents)} документов.")
 
+print("Добавление метаданных (имя файла)...")
+for doc in documents:
+    doc.metadata['filename'] = os.path.basename(doc.metadata['source'])
+
 text_splitter = RecursiveCharacterTextSplitter(
     chunk_size=500,
     chunk_overlap=200
@@ -35,6 +40,10 @@ text_splitter = RecursiveCharacterTextSplitter(
 
 chunks = text_splitter.split_documents(documents)
 print(f"Документы разбиты на {len(chunks)} чанков.")
+
+print("Добавление ID для каждого чанка...")
+for i, chunk in enumerate(chunks):
+    chunk.metadata['chunk_id'] = f"{chunk.metadata['source']}-{i}"
 
 print(f"Загрузка эмбеддинг-модели: {EMBEDDING_MODEL_NAME}...")
 embedding_model = HuggingFaceEmbeddings(
