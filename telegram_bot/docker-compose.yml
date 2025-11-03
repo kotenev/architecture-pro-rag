@@ -1,0 +1,14 @@
+# docker-compose.yml
+version: '3.8'
+
+services:
+  rag-bot:
+    build: .
+    container_name: rag_bot_container_yandex
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - YANDEX_API_KEY=${YANDEX_API_KEY}
+      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
+    volumes:
+      - ./vectorstore:/app/vectorstore
+    restart: unless-stopped

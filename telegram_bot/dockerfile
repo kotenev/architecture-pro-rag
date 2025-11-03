@@ -1,0 +1,15 @@
+# Dockerfile
+FROM python:3.11-slim
+
+WORKDIR /app
+
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY . .
+
+# Убедитесь, что векторная база находится в правильном месте в образе
+# или смонтируйте её при запуске
+# COPY vectorstore /app/vectorstore # Если векторная база включена в образ
+
+CMD ["python", "rag_bot.py"]
