@@ -1,3 +1,5 @@
+#! /usr/bin/env python
+
 import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
@@ -5,8 +7,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores.faiss import FAISS
 
 KNOWLEDGE_BASE_DIR = "knowledge_base"
-FAISS_INDEX_DIR = "faiss_index_multi"
-EMBEDDING_MODEL_NAME = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"
+FAISS_INDEX_DIR = "faiss_index"
+EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 
 print("--- Начало процесса создания индекса FAISS ---")
 
@@ -28,7 +30,7 @@ if not documents:
 print(f"Загружено {len(documents)} документов.")
 
 text_splitter = RecursiveCharacterTextSplitter(
-    chunk_size=1000,
+    chunk_size=500,
     chunk_overlap=200
 )
 
