@@ -1,13 +1,10 @@
 #! /usr/bin/env python
 
 import os
-import json
 import argparse
-from typing import List, Optional
+from typing import List
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores.faiss import FAISS
-from langchain.docstore.document import Document
-
 
 class VectorSearchTester:
     """Класс для тестирования поиска по векторному индексу"""
@@ -15,7 +12,6 @@ class VectorSearchTester:
     def __init__(self, 
                  index_path: str = "faiss_index",
                  model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-                 #model_name: str = "sentence-transformers/paraphrase-multilingual-mpnet-base-v2"):
         """
         Инициализация тестера
         
@@ -185,8 +181,7 @@ class VectorSearchTester:
                     'found': None,
                     'relevance': 0
                 })
-        
-        # Итоговая статистика
+
         print("\n" + "=" * 60)
         print("ИТОГОВАЯ СТАТИСТИКА")
         print("=" * 60)
@@ -227,8 +222,7 @@ class VectorSearchTester:
                 else:
                     query = user_input
                     k = 3
-                
-                # Выполнение поиска
+
                 results = self.search(query, k=k, threshold=0.3)
                 self.display_results(query, results)
                 

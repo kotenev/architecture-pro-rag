@@ -1,6 +1,5 @@
 #! /usr/bin/env python
 
-import os
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.document_loaders import DirectoryLoader, TextLoader
 from langchain_huggingface import HuggingFaceEmbeddings
