@@ -1,0 +1,12 @@
+version: '3.8'
+services:
+  rag:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - KB_DIR=/app/knowledge_base
+      - INDEX_DIR=/app/index
+    volumes:
+      - ./:/app
