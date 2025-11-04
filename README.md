@@ -41,7 +41,7 @@
   - **Приём запроса:** Через обработчик `handle_message` в `python-telegram-bot`.
   - **Поиск:** `vectorstore.as_retriever()` ищет `k=4` ближайших чанка.
   - **Промптинг:** Используется `ChatPromptTemplate` с сообщением роли `ai`, содержащим инструкции CoT и Few-Shot примеры.
-  - **Генерация ответа:** `YandexGPT` (yandexgpt/yandexgpt-lite) генерирует ответ. Требует `YANDEX_API_KEY` и `YANDEX_FOLDER_ID`.
+  - **Генерация ответа:** `YandexGPT` (yandexgpt/yandexgpt-lite) генерирует ответ. Требует `YC_API_KEY` и `YC_FOLDER_ID`.
 
 ### 2. Few-Shot Prompting
 - В сообщение роли `ai` добавлены два примера, релевантных уникальной базе знаний (например, о Mark Murray и Leslie Ortega), показывающие структуру запроса и ожидаемый формат ответа с объяснением шагов.
