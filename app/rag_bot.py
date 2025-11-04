@@ -17,15 +17,15 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-YANDEX_API_KEY = os.getenv("YANDEX_API_KEY")
-YANDEX_FOLDER_ID = os.getenv("YANDEX_FOLDER_ID")
+YC_API_KEY = os.getenv("YC_API_KEY")
+YC_FOLDER_ID = os.getenv("YC_FOLDER_ID")
 
 if not TELEGRAM_BOT_TOKEN:
     raise ValueError("Необходимо установить переменную окружения TELEGRAM_BOT_TOKEN")
-if not YANDEX_API_KEY:
-    raise ValueError("Необходимо установить переменную окружения YANDEX_API_KEY")
-if not YANDEX_FOLDER_ID:
-    raise ValueError("Необходимо установить переменную окружения YANDEX_FOLDER_ID")
+if not YC_API_KEY:
+    raise ValueError("Необходимо установить переменную окружения YC_API_KEY")
+if not YC_FOLDER_ID:
+    raise ValueError("Необходимо установить переменную окружения YC_FOLDER_ID")
 
 
 VECTORSTORE_PATH = "vectorstore/faiss_index"
@@ -49,8 +49,8 @@ def initialize_rag_components():
     logger.info("Инициализация YandexGPT LLM...")
 
     llm = YandexGPT(
-        api_key=YANDEX_API_KEY,
-        folder_id=YANDEX_FOLDER_ID,
+        api_key=YC_API_KEY,
+        folder_id=YC_FOLDER_ID,
         model=YANDEX_GPT_MODEL_NAME,
         temperature=YANDEX_GPT_TEMPERATURE,
         llm_name="ai"
