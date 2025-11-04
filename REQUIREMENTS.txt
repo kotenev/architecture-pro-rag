@@ -25,6 +25,9 @@ pandas==2.2.3
 tqdm==4.67.1
 torch==2.9.0
 scikit-learn==1.6.1
+fastapi==0.121.0
+uvicorn==0.38.0
+pydantic==2.12.3
 
 # Логирование и тестирование
 python-dotenv==1.2.1
