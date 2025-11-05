@@ -1,38 +1,60 @@
-import json, os
-from pathlib import Path
-from sentence_transformers import SentenceTransformer
-import numpy as np
-import faiss
-from src.config import *
-from src.utils import load_txt_files
+import json
 from typing import List
 
-from yandex_cloud_ml_sdk import YCloudML
-from yandex_cloud_ml_sdk.auth import APIKeyAuth
+import faiss
+from sentence_transformers import SentenceTransformer
 
-sdk = YCloudML(
-    folder_id=YANDEX_FOLDER_ID,
-    auth=APIKeyAuth(YANDEX_API_KEY)
-)
+from src.config import *
+
+from yandex_cloud_ml_sdk import YCloudML
+
 
 class RAGBot:
-    def __init__(self, index_dir=INDEX_DIR, embed_model=EMBED_MODEL, top_k=TOP_K):
+
+    def __init__(self, index_dir: str = INDEX_DIR, embed_model: str = EMBED_MODEL, top_k: int = TOP_K):
         self.index_dir = Path(index_dir)
         self.model = SentenceTransformer(embed_model)
         self.top_k = top_k
         self._load_index()
 
+        if not (YANDEX_FOLDER_ID and YANDEX_API_KEY):
+            raise RuntimeError("YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы (см. .env или config.py)")
+
+        self.sdk = YCloudML(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
+        self.yandex_model = YANDEX_LLM_MODEL or "yandexgpt-lite"
+
+        models_obj = getattr(self.sdk, "models", None)
+        if not models_obj:
+            raise RuntimeError("SDK не содержит атрибут 'models' — обновите yandex-cloud-ml-sdk")
+
+        if hasattr(models_obj, "chat"):
+            print("🧠 Используется режим CHAT (sdk.models.chat)")
+            model_builder = models_obj.chat
+            self.api_mode = "chat"
+        elif hasattr(models_obj, "completions"):
+            print("🧠 Используется режим COMPLETIONS (sdk.models.completions)")
+            model_builder = models_obj.completions
+            self.api_mode = "completions"
+        else:
+            raise RuntimeError("SDK не имеет методов chat или completions")
+
+        self.model_client = model_builder(self.yandex_model).configure(
+            temperature=0.0,
+            max_tokens=1024,
+        )
+
     def _load_index(self):
-        meta_path = self.index_dir / "metadata.json"
-        idx_path = self.index_dir / "faiss.index"
+        meta_path = Path(self.index_dir) / "metadata.json"
+        idx_path = Path(self.index_dir) / "faiss.index"
         if not meta_path.exists() or not idx_path.exists():
-            raise FileNotFoundError("Index or metadata not found. Run build_index.py first.")
+            raise FileNotFoundError("Индекс не найден. Запустите build_index.py")
         with open(meta_path, "r", encoding="utf-8") as f:
             self.metadata = json.load(f)
         self.chunks = self.metadata["chunks"]
         self.index = faiss.read_index(str(idx_path))
-        print("Loaded FAISS index with", len(self.chunks), "chunks.")
+        print(f"FAISS индекс загружен: {len(self.chunks)} чанков")
 
+    # ---------- Эмбеддинг и поиск ----------
     def _embed_query(self, query: str):
         v = self.model.encode([query], convert_to_numpy=True)
         faiss.normalize_L2(v)
@@ -43,57 +65,90 @@ class RAGBot:
         D, I = self.index.search(qv, self.top_k)
         results = []
         for dist, idx in zip(D[0], I[0]):
-            if idx < 0 or idx >= len(self.chunks): continue
-            results.append({"score": float(dist), "chunk": self.chunks[idx]})
+            if 0 <= idx < len(self.chunks):
+                results.append({"score": float(dist), "chunk": self.chunks[idx]})
         return results
 
-    def build_prompt(self, query: str, retrieved: List[dict], fewshot_examples: List[dict]=None):
-        # System prompt with CoT instruction
-        system = (
-            "System: Ты ассистент техдоков компании. Сначала коротко опиши шаги рассуждения (Chain-of-Thought), "
-            "потом дай окончательный ответ. Если в базе нет точного ответа — честно скажи: 'Я не знаю'.\n\n"
+    # ---------- Промпт ----------
+    def build_prompt(self, query: str, retrieved: List[dict], fewshot_examples: List[dict] = None):
+        system_prompt = (
+            "Ты — технический помощник. "
+            "Сначала рассуждай пошагово (Chain-of-Thought), затем дай краткий ответ. "
+            "Если информации недостаточно, скажи 'Я не знаю'.\n\n"
         )
 
-        # Context assembly (top N chunks, with source citations)
-        context = "Найденные фрагменты (с цитированием):\n"
+        context = "Контекст из базы знаний:\n"
         for r in retrieved:
             c = r["chunk"]
-            context += f"- Источник: {c['source_id']}, id={c['chunk_id']}\n{c['text']}\n\n"
+            context += f"- [{c['source_id']}]: {c['text']}\n\n"
 
-        # Few-shot (if provided)
         fewshot_text = ""
         if fewshot_examples:
-            fewshot_text += "Примеры:\n"
+            fewshot_text += "Примеры (Few-shot):\n"
             for ex in fewshot_examples:
                 fewshot_text += f"Q: {ex['q']}\nA: {ex['a']}\n\n"
 
-        # Query block
-        prompt = system + fewshot_text + context + f"Вопрос: {query}\nОтвет (с шагами рассуждения):"
-        return prompt
+        return f"{system_prompt}{fewshot_text}{context}Вопрос: {query}\nОтвет:".strip()
 
-    def call_llm(self, prompt: str, max_tokens=512, temperature=0.0):
-        # OpenAI chat completion example (adjust if using other provider)
-        model = sdk.models.completions("yandexgpt")
-        model = model.configure(temperature=temperature)
-        resp = model.run(prompt)
-        return resp #["choices"][0]["message"]["content"]
+    def call_llm(self, prompt_or_messages):
+        try:
+            if self.api_mode == "chat":
+                if isinstance(prompt_or_messages, str):
+                    messages = [{"role": "user", "text": prompt_or_messages}]
+                else:
+                    messages = prompt_or_messages
+                result = self.model_client.run(messages)
+            else:
+                if not isinstance(prompt_or_messages, str):
+                    prompt = "\n".join(m.get("text", "") for m in prompt_or_messages)
+                else:
+                    prompt = prompt_or_messages
+                result = self.model_client.run(prompt)
+        except Exception as e:
+            raise RuntimeError(f"Ошибка вызова модели: {e}")
+
+        text = None
+        try:
+            if hasattr(result, "result") and hasattr(result.result, "alternatives"):
+                text = result.result.alternatives[0].text
+            elif isinstance(result, list) and hasattr(result[0], "text"):
+                text = result[0].text
+            elif hasattr(result, "alternatives"):
+                text = result.alternatives[0].text
+            else:
+                text = str(result)
+        except Exception:
+            text = str(result)
+        return text.strip()
 
     def post_filter(self, text: str):
-        # simple safety: block if any blocklist phrase occurs
         lower = text.lower()
         for bad in SAFETY_BLOCKLIST:
             if bad in lower:
-                return False, f"Filtered potential secret or unsafe content: contains '{bad}'"
+                return False, f"⚠️ Фильтр безопасности: найдено '{bad}'"
         return True, text
 
-    def answer(self, query: str, fewshot_examples: List[dict]=None):
+    def answer(self, query: str, fewshot_examples: List[dict] = None):
         retrieved = self.retrieve(query)
         if not retrieved:
-            return {"answer": "Я не знаю.", "source": [], "explain": "Нет найденных фрагментов."}
-        prompt = self.build_prompt(query, retrieved, fewshot_examples=fewshot_examples)
-        llm_out = self.call_llm(prompt)
+            return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
+
+        prompt = self.build_prompt(query, retrieved, fewshot_examples)
+        try:
+            llm_out = self.call_llm(prompt)
+        except Exception as e:
+            return {
+                "answer": "Ошибка при обращении к LLM",
+                "source": [r["chunk"]["source_id"] for r in retrieved],
+                "explain": str(e),
+            }
+
         ok, filtered = self.post_filter(llm_out)
         if not ok:
-            return {"answer": "Я не могу предоставить информацию — потенциально небезопасно.", "source": [r["chunk"]["source_id"] for r in retrieved], "explain": filtered}
-        return {"answer": filtered, "source": [r["chunk"]["source_id"] for r in retrieved], "explain": "OK"}
+            return {
+                "answer": "Я не могу ответить (фильтрация безопасности).",
+                "source": [r["chunk"]["source_id"] for r in retrieved],
+                "explain": filtered,
+            }
 
+        return {"answer": filtered, "source": [r["chunk"]["source_id"] for r in retrieved], "explain": "OK"}
