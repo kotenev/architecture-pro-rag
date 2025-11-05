@@ -6,6 +6,8 @@ langchain-core==0.3.79
 langchain-community==0.3.31
 langchain-huggingface==0.3.1
 yandexcloud==0.366.0
+openai==2.7.1
+yandex_cloud_ml_sdk==0.17.0
 
 # Эмбеддинги
 sentence-transformers==5.1.2
