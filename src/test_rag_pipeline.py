@@ -14,7 +14,7 @@ if not YANDEX_FOLDER_ID or not YANDEX_API_KEY:
     print("Не заданы YANDEX_FOLDER_ID и/или YANDEX_API_KEY (см. .env).")
     sys.exit(1)
 
-print("✅ Проверка окружения:")
+print("Проверка окружения:")
 print(f"   Folder ID : {YANDEX_FOLDER_ID}")
 print(f"   Model     : {YANDEX_LLM_MODEL}")
 print(f"   KB_DIR    : {KB_DIR}")
