@@ -46,7 +46,7 @@ fi
 
 echo -e "${GREEN}Конфигурация найдена (.env)${NC}"
 
-export "$(< .env grep -v '^#' | xargs)"
+export "$(grep -v '^#' .env | sed 's/\r$//' | xargs -0)"
 
 # Проверка индекса
 if [ ! -d "index" ] || [ ! -f "index/faiss.index" ]; then
@@ -67,7 +67,7 @@ case $MODE in
             echo -e "${RED}TELEGRAM_BOT_TOKEN не задан в .env${NC}"
             exit 1
         fi
-        python telegram_bot.py
+        python src/telegram_bot.py
         ;;
 
     api)
