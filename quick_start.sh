@@ -46,7 +46,7 @@ fi
 
 echo -e "${GREEN}Конфигурация найдена (.env)${NC}"
 
-export "$(grep -v '^#' .env | sed 's/\r$//' | xargs -0)"
+export "$(cat .env | sed 's/#.*//g' | xargs)"
 
 # Проверка индекса
 if [ ! -d "index" ] || [ ! -f "index/faiss.index" ]; then

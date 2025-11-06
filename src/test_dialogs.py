@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 from src.rag_bot import RAGBot
 bot = RAGBot()
 tests = [

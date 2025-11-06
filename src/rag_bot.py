@@ -87,7 +87,6 @@ class RAGBot:
         self.index = faiss.read_index(str(idx_path))
         print(f"FAISS индекс загружен: {len(self.chunks)} чанков")
 
-    # ---------- Эмбеддинг и поиск ----------
     def _embed_query(self, query: str):
         v = self.model.encode([query], convert_to_numpy=True)
         faiss.normalize_L2(v)
@@ -102,7 +101,6 @@ class RAGBot:
                 results.append({"score": float(dist), "chunk": self.chunks[idx]})
         return results
 
-    # ---------- Промпт ----------
     def build_prompt(self, query: str, retrieved: List[dict], fewshot_examples: List[dict] = None):
         system_prompt = (
             "Ты — технический помощник. "

@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 import os
 import sys
 import argparse
@@ -17,10 +18,9 @@ def main():
     args = parser.parse_args()
     test_query = args.prompt
 
-    # --- Настройки окружения ---
     YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID")
     YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY")
-    YANDEX_LLM_MODEL = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-lite")
+    YANDEX_LLM_MODEL = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-5-lite")
 
     if not YANDEX_FOLDER_ID or not YANDEX_API_KEY:
         print("Ошибка: переменные окружения YANDEX_FOLDER_ID и YANDEX_API_KEY не заданы.")
@@ -33,7 +33,6 @@ def main():
     print(f"   Folder ID : {YANDEX_FOLDER_ID}")
     print(f"   Model     : {YANDEX_LLM_MODEL}")
 
-    # --- Инициализация SDK ---
     sdk = YCloudML(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
 
     print("\nПроверка доступных методов SDK.models:")
@@ -59,7 +58,6 @@ def main():
         max_tokens=256,
     )
 
-    # --- Тестовый запрос ---
     print(f"\nВыполняется тестовый запрос к модели ({api_mode}):")
     print(f"{test_query}\n")
 
@@ -80,7 +78,6 @@ def main():
     except Exception:
         print(result)
 
-    # --- Извлечение текста ответа ---
     text = None
     try:
         if hasattr(result, "result") and hasattr(result.result, "alternatives"):
