@@ -1,5 +1,4 @@
 #! /usr/bin/env python
-
 import os
 import argparse
 from typing import List
@@ -7,18 +6,9 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores.faiss import FAISS
 
 class VectorSearchTester:
-    """Класс для тестирования поиска по векторному индексу"""
-    
     def __init__(self, 
                  index_path: str = "faiss_index",
                  model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
-        """
-        Инициализация тестера
-        
-        Args:
-            index_path: Путь к сохраненному индексу
-            model_name: Название модели эмбеддингов
-        """
         self.index_path = index_path
         self.model_name = model_name
 
@@ -32,7 +22,6 @@ class VectorSearchTester:
         self.load_index()
     
     def load_index(self):
-        """Загрузка векторного индекса с диска"""
         if not os.path.exists(self.index_path):
             raise FileNotFoundError(f"Индекс не найден: {self.index_path}")
         
@@ -45,17 +34,6 @@ class VectorSearchTester:
         print("Индекс успешно загружен")
     
     def search(self, query: str, k: int = 5, threshold: float = 0.7) -> List:
-        """
-        Поиск по векторному индексу
-        
-        Args:
-            query: Поисковый запрос
-            k: Количество результатов
-            threshold: Порог релевантности (0-1)
-        
-        Returns:
-            Список найденных документов с метриками
-        """
         results = self.vectorstore.similarity_search_with_score(query, k=k)
 
         filtered_results = []
@@ -71,14 +49,6 @@ class VectorSearchTester:
         return filtered_results
     
     def display_results(self, query: str, results: List, verbose: bool = True):
-        """
-        Отображение результатов поиска
-        
-        Args:
-            query: Исходный запрос
-            results: Результаты поиска
-            verbose: Показывать полный текст чанков
-        """
         print(f"\n{'=' * 60}")
         print(f"ЗАПРОС: {query}")
         print(f"{'=' * 60}")
@@ -107,32 +77,31 @@ class VectorSearchTester:
             print("-" * 60)
     
     def test_golden_queries(self):
-        """Тестирование на золотом наборе вопросов"""
         golden_queries = [
             {
-                "query": "Кто такой Anthony Gibson?",
-                "expected_doc": "Anthony_Gibson.txt",
-                "description": "Вопрос о лесном духе Блуде"
-            },
-            {
-                "query": "Что такое Dawn Wells?",
-                "expected_doc": "Dawn_Wells.txt",
-                "description": "Вопрос о неупокоенной душе"
-            },
-            {
-                "query": "Расскажи про David Garcia",
-                "expected_doc": "David_Garcia.txt",
-                "description": "Вопрос о злыднях"
-            },
-            {
-                "query": "Какие есть лесные духи?",
+                "query": "Кто такой Якуб и как он относится к лошадям хозяев?",
                 "expected_doc": None,
-                "description": "Общий вопрос о лесных духах"
+                "description": "Вопрос о домовом-защитнике усадьбы"
             },
             {
-                "query": "Как защититься от злых духов?",
+                "query": "Что происходит с теми, кто нарушает полуденный покой Ярополка?",
                 "expected_doc": None,
-                "description": "Вопрос о защите от духов"
+                "description": "Вопрос о духе полуденного зноя"
+            },
+            {
+                "query": "Почему Авдея считают вещим певцом и предвестником бед?",
+                "expected_doc": None,
+                "description": "Вопрос о пророческой птице-гамаюне"
+            },
+            {
+                "query": "Как задобрить Самуила перед походом в лес?",
+                "expected_doc": None,
+                "description": "Общий вопрос о встрече с лесным хозяином"
+            },
+            {
+                "query": "Какие обереги помогают против наваждений Дементия?",
+                "expected_doc": None,
+                "description": "Вопрос о защите от чар огненного духа"
             }
         ]
         
@@ -196,13 +165,12 @@ class VectorSearchTester:
         return results_summary
     
     def interactive_search(self):
-        """Интерактивный режим поиска"""
         print("\n" + "=" * 60)
         print("ИНТЕРАКТИВНЫЙ ПОИСК")
         print("=" * 60)
         print("Введите запросы для поиска (или 'выход' для завершения)")
         print("Формат: <запрос> [количество результатов]")
-        print("Пример: Кто такой лесной дух? 3")
+        print("Пример: Как задобрить Самуила? 3")
         
         while True:
             try:

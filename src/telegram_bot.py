@@ -34,15 +34,15 @@ if FEWSHOT_FILE and os.path.exists(FEWSHOT_FILE):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_msg = (
-        "Привет! Я RAG-бот компании QuantumForge Software.\n\n"
-        "Я могу отвечать на вопросы по нашей базе знаний о вымышленной вселенной.\n\n"
+        "Привет! Я RAG-бот, посвящённый русской мифологии.\n\n"
+        "Я могу отвечать на вопросы о духах, обрядах и легендах из нашей обновлённой базы знаний.\n\n"
         "Доступные команды:\n"
         "/start - показать это сообщение\n"
         "/help - получить помощь\n"
         "/stats - статистика базы знаний\n"
         "/fewshot_on - включить Few-shot примеры\n"
         "/fewshot_off - отключить Few-shot примеры\n\n"
-        "Просто отправь мне свой вопрос! 🚀"
+        "Просто отправь вопрос о мифологических персонажах!"
     )
     await update.message.reply_text(welcome_msg)
 
@@ -54,9 +54,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "2. Я найду релевантную информацию в базе\n"
         "3. Сформирую ответ с пошаговым рассуждением (Chain-of-Thought)\n\n"
         "Примеры вопросов:\n"
-        "• Как называется столица планеты Ти'лора?\n"
-        "• Кто владелец HyperRelay?\n"
-        "• Что такое VoidCore?\n\n"
+        "• Как Якуб заботится о любимой лошади хозяев?\n"
+        "• Что происходит с теми, кто мешает Ярополку в полдень?\n"
+        "• Чем знаменита пророческая песнь Авдея?\n\n"
         "Если я не найду информацию, честно скажу: 'Я не знаю'."
     )
     await update.message.reply_text(help_text)

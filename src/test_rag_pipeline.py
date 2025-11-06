@@ -45,7 +45,7 @@ else:
 
 user_query = input("\nВведите тестовый запрос: ").strip()
 if not user_query:
-    user_query = "Что делает модуль ContextManager?"
+    user_query = "Как Якуб заботится о понравившейся ему лошади?"
 
 print(f"\nВыполняется полный RAG-пайплайн для запроса: '{user_query}'\n")
 
