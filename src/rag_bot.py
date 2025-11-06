@@ -21,18 +21,19 @@ class RAGBot:
             raise RuntimeError("YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы (см. .env или config.py)")
 
         self.sdk = YCloudML(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
-        self.yandex_model = YANDEX_LLM_MODEL or "yandexgpt-lite"
+        raw_model_name = YANDEX_LLM_MODEL or "yandexgpt-5-lite"
+        self.yandex_model = self._resolve_model_uri(raw_model_name)
 
         models_obj = getattr(self.sdk, "models", None)
         if not models_obj:
             raise RuntimeError("SDK не содержит атрибут 'models' — обновите yandex-cloud-ml-sdk")
 
         if hasattr(models_obj, "chat"):
-            print("🧠 Используется режим CHAT (sdk.models.chat)")
+            print("Используется режим CHAT (sdk.models.chat)")
             model_builder = models_obj.chat
             self.api_mode = "chat"
         elif hasattr(models_obj, "completions"):
-            print("🧠 Используется режим COMPLETIONS (sdk.models.completions)")
+            print("Используется режим COMPLETIONS (sdk.models.completions)")
             model_builder = models_obj.completions
             self.api_mode = "completions"
         else:
@@ -42,6 +43,38 @@ class RAGBot:
             temperature=0.0,
             max_tokens=1024,
         )
+
+
+    def _resolve_model_uri(self, model_value: str) -> str:
+        """Convert short model names to full YandexGPT URIs."""
+
+        if not model_value:
+            raise RuntimeError("YANDEX_LLM_MODEL не задан")
+
+        model_value = model_value.strip()
+        if model_value.startswith("gpt://"):
+            return model_value
+
+        if not YANDEX_FOLDER_ID:
+            raise RuntimeError(
+                "Для короткой формы YANDEX_LLM_MODEL необходимо задать YANDEX_FOLDER_ID"
+            )
+
+        for delimiter in ("@", ":"):
+            if delimiter in model_value:
+                model_name, version = model_value.split(delimiter, 1)
+                break
+        else:
+            model_name, version = model_value, "latest"
+
+        model_name = model_name.strip("/ ")
+        version = version.strip() or "latest"
+
+        if not model_name:
+            raise RuntimeError("Некорректное значение YANDEX_LLM_MODEL")
+
+        return f"gpt://{YANDEX_FOLDER_ID}/{model_name}/{version}"
+
 
     def _load_index(self):
         meta_path = Path(self.index_dir) / "metadata.json"
