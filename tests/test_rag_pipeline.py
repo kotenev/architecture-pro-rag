@@ -1,5 +1,4 @@
 #! /usr/bin/env python
-
 import os
 import pytest
 from yandex_cloud_ml_sdk import YCloudML
