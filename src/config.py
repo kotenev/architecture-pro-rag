@@ -7,7 +7,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 KB_DIR = os.environ.get("KB_DIR", str(BASE_DIR / "knowledge_base"))
 INDEX_DIR = os.environ.get("INDEX_DIR", str(BASE_DIR / "index"))
 
-EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v3"
+EMBED_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 EMBED_DIM = 384
 TOP_K = int(os.environ.get("TOP_K", 5))
 

@@ -115,7 +115,7 @@ jobs:
           Environment="YANDEX_API_KEY=${YANDEX_API_KEY}"
           Environment="YANDEX_LLM_MODEL=yandexgpt-5-lite"
           Environment="INDEX_DIR=index"
-          Environment="EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v3"
+          Environment="EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2"
 
           [Install]
           WantedBy=multi-user.target
