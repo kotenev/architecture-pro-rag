@@ -85,7 +85,6 @@ class RAGBot:
 
 
     def _resolve_model_uri(self, model_value: str) -> str:
-        """Convert short model names to full YandexGPT URIs."""
 
         if not model_value:
             raise RuntimeError("YANDEX_LLM_MODEL не задан")
