@@ -157,12 +157,31 @@ class RAGBot:
                 results.append({"score": float(dist), "chunk": self.chunks[idx]})
         return results
 
-    def build_prompt(self, query: str, retrieved: List[dict], fewshot_examples: List[dict] = None):
+    def build_prompt(
+            self,
+            query: str,
+            retrieved: List[dict],
+            fewshot_examples: List[dict] = None,
+            term_mappings: Sequence[Tuple[str, str]] = (),
+    ):
         system_prompt = (
             "Ты — технический помощник. "
             "Сначала рассуждай пошагово (Chain-of-Thought), затем дай краткий ответ. "
             "Если информации недостаточно, скажи 'Я не знаю'.\n\n"
         )
+
+        mapping_note = ""
+        if term_mappings:
+            mapping_note_lines = [
+                "Сопоставление терминов пользователя с внутренними идентификаторами:",
+            ]
+            mapping_note_lines.extend(
+                f"- {orig} → {mapped}" for orig, mapped in term_mappings
+            )
+            mapping_note_lines.append(
+                "Если в контексте встречается внутренний идентификатор, считай, что речь идёт об исходном термине пользователя."
+            )
+            mapping_note = "\n".join(mapping_note_lines) + "\n\n"
 
         context = "Контекст из базы знаний:\n"
         for r in retrieved:
@@ -175,7 +194,7 @@ class RAGBot:
             for ex in fewshot_examples:
                 fewshot_text += f"Q: {ex['q']}\nA: {ex['a']}\n\n"
 
-        return f"{system_prompt}{fewshot_text}{context}Вопрос: {query}\nОтвет:".strip()
+        return f"{system_prompt}{mapping_note}{fewshot_text}{context}Вопрос: {query}\nОтвет:".strip()
 
     def call_llm(self, prompt_or_messages):
         try:
@@ -221,13 +240,7 @@ class RAGBot:
         if not retrieved:
             return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
 
-        prompt = self.build_prompt(query, retrieved, fewshot_examples)
-        if replacements:
-            mapping_note = "\n".join(f"- {orig} → {mapped}" for orig, mapped in replacements)
-            prompt = (
-                "Термины пользователя сопоставлены с внутренними идентификаторами:\n"
-                f"{mapping_note}\n\n" + prompt
-            )
+        prompt = self.build_prompt(query, retrieved, fewshot_examples, replacements)
         try:
             llm_out = self.call_llm(prompt)
         except Exception as e:
