@@ -44,7 +44,7 @@ jobs:
           curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
           source "$HOME/.bashrc"
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
-          yc version
+          $HOME/yandex-cloud/bin/yc version
 
       - name: Configure Yandex Cloud CLI
         env:
