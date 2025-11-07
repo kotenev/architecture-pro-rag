@@ -42,6 +42,7 @@ jobs:
       - name: Install Yandex Cloud CLI
         run: |
           curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          source "$HOME/.bashrc"
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
           yc version
 
