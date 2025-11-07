@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 import json
 import re
 from typing import Dict, List, Optional, Sequence, Tuple
@@ -290,4 +291,10 @@ class RAGBot:
                 "explain": filtered,
             }
 
-        return {"answer": filtered, "source": [r["chunk"]["source_id"] for r in retrieved], "explain": "OK"}
+        source_ids = [r["chunk"]["source_id"] for r in retrieved]
+        normalized_answer = filtered.lower()
+        if "я не знаю" in normalized_answer or "i don't know" in normalized_answer:
+            source_ids = []
+
+        return {"answer": filtered, "source": source_ids, "explain": "OK"}
+
