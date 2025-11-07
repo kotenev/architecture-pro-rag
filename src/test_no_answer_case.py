@@ -1,3 +1,4 @@
+#! /usr/bin/env python
 import os
 import sys
 from pprint import pprint
@@ -17,7 +18,6 @@ print("Переменные окружения найдены")
 print(f"   Folder ID : {YANDEX_FOLDER_ID}")
 print(f"   Model     : {YANDEX_LLM_MODEL}")
 
-# --- Инициализация бота ---
 try:
     bot = RAGBot(index_dir=INDEX_DIR)
 except Exception as e:
@@ -27,7 +27,7 @@ except Exception as e:
 print("Бот успешно инициализирован.\n")
 
 query = "Какая температура на Сатурне в данный момент?"
-print(f"🚀 Тестовый запрос: {query}\n")
+print(f"Тестовый запрос: {query}\n")
 
 try:
     result = bot.answer(query)
@@ -41,7 +41,6 @@ pprint(result)
 print("\nИтоговый ответ:")
 print(result.get("answer", "(нет ответа)"))
 
-# --- Проверка корректности ---
 expected = "я не знаю"
 answer_text = result.get("answer", "").lower()
 
