@@ -1,0 +1,111 @@
+name: Deploy RAG Bot to Yandex Cloud Compute
+
+on:
+  push:
+    branches: [ "rag" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    name: ☁Deploy to Yandex Cloud Compute
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+
+      - name: Run tests before deploy
+        env:
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+        run: |
+          pip install pytest
+          pytest -q tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+          yc version
+
+      - name: Configure Yandex Cloud CLI
+        env:
+          YC_TOKEN: ${{ secrets.YANDEX_API_KEY }}
+          YC_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YC_CLOUD_ID: ${{ secrets.YANDEX_CLOUD_ID }}
+        run: |
+          yc config set token $YC_TOKEN
+          yc config set folder-id $YC_FOLDER_ID
+          yc config set cloud-id $YC_CLOUD_ID
+          echo "Yandex Cloud CLI configured"
+
+      - name: Setup SSH key for remote deploy
+        env:
+          YC_SSH_KEY: ${{ secrets.YC_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$YC_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "SSH key added"
+
+      - name: Deploy RAG bot to Compute VM
+        env:
+          YC_VM_IP: ${{ secrets.YC_VM_IP }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+        run: |
+          echo "Connecting to $YC_VM_IP"
+          ssh -o StrictHostKeyChecking=no ubuntu@$YC_VM_IP <<'EOF'
+          set -e
+          echo "Updating bot on VM..."
+          cd ~/rag-bot || git clone https://github.com/${GITHUB_REPOSITORY}.git rag-bot && cd rag-bot
+          git fetch origin rag && git reset --hard origin/rag
+
+          echo "Updating dependencies..."
+          python3 -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+
+          echo "Restarting RAG API service..."
+          sudo systemctl stop rag-bot.service || true
+          sudo systemctl daemon-reload
+          sudo tee /etc/systemd/system/rag-bot.service > /dev/null <<SERVICE
+          [Unit]
+          Description=RAG Bot FastAPI Service
+          After=network.target
+
+          [Service]
+          WorkingDirectory=/home/ubuntu/rag-bot
+          ExecStart=/home/ubuntu/rag-bot/.venv/bin/uvicorn src.api:app --host 0.0.0.0 --port 8000
+          Restart=always
+          Environment="YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}"
+          Environment="YANDEX_API_KEY=${YANDEX_API_KEY}"
+          Environment="YANDEX_LLM_MODEL=yandexgpt-5-lite"
+          Environment="INDEX_DIR=index"
+          Environment="EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2"
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+
+          sudo systemctl enable rag-bot.service
+          sudo systemctl start rag-bot.service
+          systemctl status rag-bot.service --no-pager
+
+          echo "Deployment completed."
+          EOF
+
+      - name: Deployment status
+        run: echo "RAG Bot successfully deployed to Yandex Cloud Compute!"
