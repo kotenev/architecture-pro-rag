@@ -16,5 +16,6 @@ YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY")
 YANDEX_LLM_MODEL = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-lite")
 
 FEWSHOT_FILE = os.environ.get("FEWSHOT_FILE", str(BASE_DIR / "examples" / "fewshot.jsonl"))
+TERMS_MAP_FILE = os.environ.get("TERMS_MAP_FILE", str(BASE_DIR / "terms_map.json"))
 
 SAFETY_BLOCKLIST = ["superpassword", "swordfish", "ignore all instructions", "root-password"]

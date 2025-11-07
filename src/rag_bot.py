@@ -1,5 +1,6 @@
 import json
-from typing import List
+import re
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -16,6 +17,7 @@ class RAGBot:
         self.model = SentenceTransformer(embed_model)
         self.top_k = top_k
         self._load_index()
+        self.terms_map, self._terms_regex, self._terms_lookup = self._load_terms_map()
 
         if not (YANDEX_FOLDER_ID and YANDEX_API_KEY):
             raise RuntimeError("YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы (см. .env или config.py)")
@@ -43,6 +45,43 @@ class RAGBot:
             temperature=0.0,
             max_tokens=1024,
         )
+
+    def _load_terms_map(self) -> Tuple[Dict[str, str], Optional[re.Pattern], Dict[str, str]]:
+        terms_map: Dict[str, str] = {}
+        terms_lookup: Dict[str, str] = {}
+
+        if not TERMS_MAP_FILE:
+            return terms_map, None, terms_lookup
+
+        path = Path(TERMS_MAP_FILE)
+        if not path.exists():
+            return terms_map, None, terms_lookup
+
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                raw_map = json.load(f)
+        except (json.JSONDecodeError, OSError) as exc:
+            raise RuntimeError(f"Не удалось загрузить terms_map.json: {exc}") from exc
+
+        if not isinstance(raw_map, dict):
+            raise RuntimeError("Файл terms_map.json имеет некорректный формат")
+
+        for original, internal in raw_map.items():
+            if not isinstance(original, str) or not isinstance(internal, str):
+                continue
+            cleaned_original = original.strip()
+            cleaned_internal = internal.strip()
+            if not cleaned_original or not cleaned_internal:
+                continue
+            terms_map[cleaned_original] = cleaned_internal
+            terms_lookup[cleaned_original.lower()] = cleaned_internal
+
+        if not terms_map:
+            return terms_map, None, terms_lookup
+
+        pattern = "|".join(sorted((re.escape(k) for k in terms_map.keys()), key=len, reverse=True))
+        regex = re.compile(rf"\b({pattern})\b", flags=re.IGNORECASE)
+        return terms_map, regex, terms_lookup
 
 
     def _resolve_model_uri(self, model_value: str) -> str:
@@ -91,6 +130,23 @@ class RAGBot:
         v = self.model.encode([query], convert_to_numpy=True)
         faiss.normalize_L2(v)
         return v.astype("float32")
+
+    def _apply_terms_map(self, query: str) -> Tuple[str, Sequence[Tuple[str, str]]]:
+        if not self._terms_regex:
+            return query, []
+
+        replacements: List[Tuple[str, str]] = []
+
+        def _replacer(match: re.Match) -> str:
+            found = match.group(0)
+            replacement = self._terms_lookup.get(found.lower())
+            if replacement:
+                replacements.append((found, replacement))
+                return replacement
+            return found
+
+        normalized_query = self._terms_regex.sub(_replacer, query)
+        return normalized_query, replacements
 
     def retrieve(self, query: str):
         qv = self._embed_query(query)
@@ -156,15 +212,22 @@ class RAGBot:
         lower = text.lower()
         for bad in SAFETY_BLOCKLIST:
             if bad in lower:
-                return False, f"⚠️ Фильтр безопасности: найдено '{bad}'"
+                return False, f"Фильтр безопасности: найдено '{bad}'"
         return True, text
 
     def answer(self, query: str, fewshot_examples: List[dict] = None):
-        retrieved = self.retrieve(query)
+        normalized_query, replacements = self._apply_terms_map(query)
+        retrieved = self.retrieve(normalized_query)
         if not retrieved:
             return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
 
         prompt = self.build_prompt(query, retrieved, fewshot_examples)
+        if replacements:
+            mapping_note = "\n".join(f"- {orig} → {mapped}" for orig, mapped in replacements)
+            prompt = (
+                "Термины пользователя сопоставлены с внутренними идентификаторами:\n"
+                f"{mapping_note}\n\n" + prompt
+            )
         try:
             llm_out = self.call_llm(prompt)
         except Exception as e:
