@@ -1,69 +1,85 @@
-#!/usr/bin/env python
+#! /usr/bin/env python
+
 import os
-import sys
-from pprint import pprint
+import pytest
+from yandex_cloud_ml_sdk import YCloudML
 
 from src.rag_bot import RAGBot
-from src.config import KB_DIR, INDEX_DIR, FEWSHOT_FILE
+from src.config import INDEX_DIR
 
-YANDEX_FOLDER_ID = os.environ.get("YANDEX_FOLDER_ID")
-YANDEX_API_KEY = os.environ.get("YANDEX_API_KEY")
-YANDEX_LLM_MODEL = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-5-lite")
+@pytest.fixture(scope="session")
+def yandex_env():
+    folder_id = os.environ.get("YANDEX_FOLDER_ID")
+    api_key = os.environ.get("YANDEX_API_KEY")
+    model = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-5-lite")
 
-if not YANDEX_FOLDER_ID or not YANDEX_API_KEY:
-    print("Не заданы YANDEX_FOLDER_ID и/или YANDEX_API_KEY (см. .env).")
-    sys.exit(1)
+    if not folder_id or not api_key:
+        pytest.skip("YANDEX_FOLDER_ID и YANDEX_API_KEY не заданы. Пропуск тестов.")
 
-print("Проверка окружения:")
-print(f"   Folder ID : {YANDEX_FOLDER_ID}")
-print(f"   Model     : {YANDEX_LLM_MODEL}")
-print(f"   KB_DIR    : {KB_DIR}")
-print(f"   INDEX_DIR : {INDEX_DIR}")
+    return {
+        "folder_id": folder_id,
+        "api_key": api_key,
+        "model": model,
+    }
 
-try:
+
+@pytest.fixture(scope="session")
+def rag_bot(yandex_env):
     bot = RAGBot(index_dir=INDEX_DIR)
-except Exception as e:
-    print(f"Ошибка при инициализации RAGBot: {e}")
-    sys.exit(1)
+    assert len(bot.chunks) > 0, "Индекс пуст или не загружен"
+    return bot
 
-print("\nБот успешно инициализирован.")
 
-fewshot_examples = []
-if FEWSHOT_FILE and os.path.exists(FEWSHOT_FILE):
-    import json
-    with open(FEWSHOT_FILE, "r", encoding="utf-8") as f:
-        for line in f:
-            try:
-                fewshot_examples.append(json.loads(line))
-            except Exception:
-                pass
+def test_sdk_connectivity(yandex_env):
+    sdk = YCloudML(folder_id=yandex_env["folder_id"], auth=yandex_env["api_key"])
 
-if fewshot_examples:
-    print(f"Загружено few-shot примеров: {len(fewshot_examples)}")
-else:
-    print("Few-shot примеры не найдены — будет использоваться только контекст базы.")
+    has_chat = hasattr(sdk.models, "chat")
+    has_completions = hasattr(sdk.models, "completions")
 
-user_query = input("\nВведите тестовый запрос: ").strip()
-if not user_query:
-    user_query = "Как Якуб заботится о понравившейся ему лошади?"
+    assert has_chat or has_completions, "SDK не имеет chat или completions API"
 
-print(f"\nВыполняется полный RAG-пайплайн для запроса: '{user_query}'\n")
+    if has_chat:
+        model_builder = sdk.models.chat
+        api_mode = "chat"
+    else:
+        model_builder = sdk.models.completions
+        api_mode = "completions"
 
-try:
-    result = bot.answer(user_query, fewshot_examples=fewshot_examples)
-except Exception as e:
-    print(f"Ошибка при выполнении пайплайна: {e}")
-    sys.exit(1)
+    model_client = model_builder(yandex_env["model"]).configure(temperature=0.0, max_tokens=64)
 
-print("Ответ получен!\n")
-pprint(result)
+    if api_mode == "chat":
+        result = model_client.run([{"role": "user", "text": "Привет!"}])
+    else:
+        result = model_client.run("Привет!")
 
-print("\nИтоговый ответ:")
-print(result.get("answer", "(нет ответа)"))
+    text = None
+    if hasattr(result, "result") and hasattr(result.result, "alternatives"):
+        text = result.result.alternatives[0].text
+    elif hasattr(result, "alternatives"):
+        text = result.alternatives[0].text
+    elif isinstance(result, list) and hasattr(result[0], "text"):
+        text = result[0].text
 
-print("\nИспользованные источники:")
-for s in result.get("source", []):
-    print(" -", s)
+    assert text is not None and len(text.strip()) > 0, "Модель не вернула текстовый ответ"
 
-print("\nПояснение:", result.get("explain", ""))
-print("\nТест завершён успешно.")
+
+def test_rag_pipeline_basic(rag_bot):
+    query = "Что делает модуль ContextManager?"
+    result = rag_bot.answer(query)
+
+    assert isinstance(result, dict)
+    assert "answer" in result
+    assert len(result["answer"].strip()) > 0
+    assert "source" in result
+    assert isinstance(result["source"], list)
+    assert result["explain"] == "OK" or "Ошибка" not in result["explain"]
+
+
+def test_rag_no_answer_case(rag_bot):
+    query = "Какая температура на Сатурне сейчас?"
+    result = rag_bot.answer(query)
+
+    assert isinstance(result, dict)
+    assert "answer" in result
+    assert "я не знаю" in result["answer"].lower(), "Бот должен вернуть 'Я не знаю.' при отсутствии контекста"
+    assert result["source"] == [] or len(result["source"]) == 0
