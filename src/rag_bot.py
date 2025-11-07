@@ -234,13 +234,46 @@ class RAGBot:
                 return False, f"Фильтр безопасности: найдено '{bad}'"
         return True, text
 
+    def _restore_original_terms(
+        self,
+        retrieved: List[dict],
+        term_mappings: Sequence[Tuple[str, str]],
+    ) -> List[dict]:
+
+        if not term_mappings:
+            return retrieved
+
+        reverse_map = {}
+        for original, internal in term_mappings:
+            internal_clean = internal.strip()
+            original_clean = original.strip()
+            if not internal_clean or not original_clean:
+                continue
+            reverse_map[internal_clean.lower()] = original_clean
+
+        if not reverse_map:
+            return retrieved
+
+        restored: List[dict] = []
+        for item in retrieved:
+            chunk = dict(item["chunk"])
+            text = chunk.get("text", "")
+            for internal_lower, original in reverse_map.items():
+                pattern = re.compile(rf"\b{re.escape(internal_lower)}\b", flags=re.IGNORECASE)
+                text = pattern.sub(original, text)
+            chunk["text"] = text
+            restored.append({"score": item["score"], "chunk": chunk})
+
+        return restored
+
     def answer(self, query: str, fewshot_examples: List[dict] = None):
         normalized_query, replacements = self._apply_terms_map(query)
         retrieved = self.retrieve(normalized_query)
         if not retrieved:
             return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
 
-        prompt = self.build_prompt(query, retrieved, fewshot_examples, replacements)
+        retrieved_for_prompt = self._restore_original_terms(retrieved, replacements)
+        prompt = self.build_prompt(query, retrieved_for_prompt, fewshot_examples, replacements)
         try:
             llm_out = self.call_llm(prompt)
         except Exception as e:
