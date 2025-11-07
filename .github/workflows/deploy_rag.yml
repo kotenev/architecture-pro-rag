@@ -87,7 +87,7 @@ jobs:
           ssh -o StrictHostKeyChecking=no ubuntu@$YC_VM_IP <<'EOF'
           set -e
           echo "Updating bot on VM..."
-          cd ~/rag-bot || git clone https://github.com/kotenev/architecture-pro-rag.git rag-bot && cd rag-bot
+          cd /home/ubuntu/rag-bot || git clone https://github.com/kotenev/architecture-pro-rag.git rag-bot && cd rag-bot
           git fetch origin rag && git reset --hard origin/rag
 
           echo "Updating dependencies..."
