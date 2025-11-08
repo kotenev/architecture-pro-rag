@@ -155,9 +155,7 @@ jobs:
           IMAGE: ${{ env.IMAGE }}
           TAG_LATEST: ${{ env.TAG_LATEST }}
         run: |
-          TEXT="RAG bot successfully deployed to Yandex Cloud Compute.
-Image: $IMAGE:$TAG_LATEST
-Commit: $GITHUB_SHA"
+          TEXT="RAG bot successfully deployed to Yandex Cloud Compute.\nImage: $IMAGE:$TAG_LATEST\nCommit: $GITHUB_SHA"
           curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TELEGRAM_CHAT_ID}" \
             -d "text=${TEXT}"

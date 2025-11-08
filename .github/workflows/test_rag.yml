@@ -21,11 +21,27 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Restore pip cache
+        id: cache-pip
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt || true
           pip install pytest yandex-cloud-ml-sdk sentence-transformers faiss-cpu
+
+      - name: Save pip cache
+        if: always() && steps.cache-pip.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.cache-pip.outputs.cache-primary-key }}
 
       - name: Prepare environment
         env:
