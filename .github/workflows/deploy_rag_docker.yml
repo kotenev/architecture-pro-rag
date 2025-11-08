@@ -43,14 +43,6 @@ jobs:
           path: ~/.cache/pip
           key: ${{ steps.cache-pip.outputs.cache-primary-key }}
 
-      - name: Run tests
-        env:
-          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
-          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
-          YANDEX_LLM_MODEL: yandexgpt-5-lite
-        run: |
-          pytest -v tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
-
       - name: Install Yandex Cloud CLI
         run: |
           curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
@@ -58,16 +50,28 @@ jobs:
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
           $HOME/yandex-cloud/bin/yc version
 
-      - name: Configure Yandex Cloud CLI
+      - name: Generate IAM token from service account key
         env:
-          YC_TOKEN: ${{ secrets.YANDEX_API_KEY }}
+          YC_SERVICE_ACCOUNT_KEY: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
           YC_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
           YC_CLOUD_ID: ${{ secrets.YANDEX_CLOUD_ID }}
         run: |
-          yc config set token $YC_TOKEN
-          yc config set folder-id $YC_FOLDER_ID
-          yc config set cloud-id $YC_CLOUD_ID
-          echo "Yandex Cloud CLI configured"
+          echo "$YC_SERVICE_ACCOUNT_KEY" > $HOME/yc-service-account-key.json
+          IAM_TOKEN=$(yc iam create-token --service-account-key $HOME/yc-service-account-key.json)
+          yc config set token "$IAM_TOKEN"
+          yc config set folder-id "$YC_FOLDER_ID"
+          yc config set cloud-id "$YC_CLOUD_ID"
+          rm -f $HOME/yc-service-account-key.json
+          echo "IAM token generated and CLI configured"
+          echo "YANDEX_API_KEY=$IAM_TOKEN" >> $GITHUB_ENV
+
+      - name: Run tests
+        env:
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ env.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+        run: |
+          pytest -v tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
 
       - name: Configure Docker auth for YCR
         run: |
@@ -102,6 +106,8 @@ jobs:
           docker build -t $IMAGE:$TAG_SHA -t $IMAGE:$TAG_LATEST .
 
           echo "Pushing image to YCR..."
+          echo "Current YC profile token info:"
+          yc config profile get default
           docker push $IMAGE:$TAG_SHA
           docker push $IMAGE:$TAG_LATEST
 
@@ -118,7 +124,7 @@ jobs:
         env:
           YC_VM_IP: ${{ secrets.YC_VM_IP }}
           YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
-          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_API_KEY: ${{ env.YANDEX_API_KEY }}
           YANDEX_LLM_MODEL: yandexgpt-5-lite
           YC_REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
         run: |
