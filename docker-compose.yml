@@ -1,61 +1,13 @@
-version: '3.8'
+version: "3.9"
 
 services:
-  telegram-bot:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rag-telegram-bot
-    env_file: .env
-    environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
-      - YANDEX_API_KEY=${YANDEX_API_KEY}
-      - YANDEX_LLM_MODEL=${YANDEX_LLM_MODEL:-yandexgpt-lite}
-      - INDEX_DIR=/app/index
-      - KB_DIR=/app/knowledge_base
-      - TOP_K=${TOP_K:-5}
-    volumes:
-      - ./knowledge_base:/app/knowledge_base:ro
-      - ./index:/app/index:ro
-      - ./examples:/app/examples:ro
-    restart: unless-stopped
-    command: python telegram_bot.py
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-  api:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: rag-api
-    env_file: .env
-    environment:
-      - YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
-      - YANDEX_API_KEY=${YANDEX_API_KEY}
-      - YANDEX_LLM_MODEL=${YANDEX_LLM_MODEL:-yandexgpt-lite}
-      - INDEX_DIR=/app/index
-      - KB_DIR=/app/knowledge_base
-      - TOP_K=${TOP_K:-5}
-    volumes:
-      - ./knowledge_base:/app/knowledge_base:ro
-      - ./index:/app/index:ro
-      - ./examples:/app/examples:ro
+  rag-bot:
+    image: cr.yandex/${YC_REGISTRY_ID}/rag-bot:latest
+    restart: always
     ports:
       - "8000:8000"
-    restart: unless-stopped
-    command: uvicorn api:app --host 0.0.0.0 --port 8000
-    profiles:
-      - api
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-
-networks:
-  default:
-    name: rag-network
+    env_file:
+      - .env
+    environment:
+      INDEX_DIR: /app/index
+      KB_DIR: /app/knowledge_base

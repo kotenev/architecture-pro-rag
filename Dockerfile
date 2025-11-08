@@ -6,21 +6,21 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+ENV PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1
 
-COPY requirements.txt .
+# 1. Зависимости
+COPY requirements.txt /app/
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src/ ./src/
-COPY telegram_bot.py .
-COPY api.py .
-COPY repl.py .
+# 2. Код проекта
+COPY . /app
 
-COPY examples/ ./examples/
+# 3. (Опционально) построить индекс на этапе сборки
+# Если knowledge_base/ лежит в репо и стабильна, это удобный вариант:
+RUN python src/build_index.py --kb-dir knowledge_base --index-dir index || echo "build_index failed at build time, will build at runtime"
 
-VOLUME ["/app/knowledge_base", "/app/index"]
+EXPOSE 8000
 
-ENV PYTHONUNBUFFERED=1
-ENV INDEX_DIR=/app/index
-ENV KB_DIR=/app/knowledge_base
-
-CMD ["python", "telegram_bot.py"]
+# 4. Команда по умолчанию
+CMD ["uvicorn", "src.api:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -1,0 +1,164 @@
+name: Deploy RAG Bot via Docker & YCR
+
+on:
+  push:
+    branches: [ "rag" ]
+  workflow_dispatch:
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      IMAGE_NAME: rag-bot
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Restore pip cache
+        id: cache-pip
+        uses: actions/cache/restore@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies for tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt || true
+          pip install pytest yandex-cloud-ml-sdk sentence-transformers faiss-cpu
+
+      - name: Save pip cache
+        if: always() && steps.cache-pip.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ steps.cache-pip.outputs.cache-primary-key }}
+
+      - name: Run tests
+        env:
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+        run: |
+          pytest -v tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
+
+      - name: Install Yandex Cloud CLI
+        run: |
+          curl https://storage.yandexcloud.net/yandexcloud-yc/install.sh | bash
+          source "$HOME/.bashrc"
+          echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
+          $HOME/yandex-cloud/bin/yc version
+
+      - name: Configure Yandex Cloud CLI
+        env:
+          YC_TOKEN: ${{ secrets.YANDEX_API_KEY }}
+          YC_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YC_CLOUD_ID: ${{ secrets.YANDEX_CLOUD_ID }}
+        run: |
+          yc config set token $YC_TOKEN
+          yc config set folder-id $YC_FOLDER_ID
+          yc config set cloud-id $YC_CLOUD_ID
+          echo "Yandex Cloud CLI configured"
+
+      - name: Configure Docker auth for YCR
+        run: |
+          yc container registry configure-docker
+          echo "Docker authenticated for YCR"
+
+      - name: Build & Push Docker image to YCR
+        env:
+          YC_REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
+        run: |
+          IMAGE="cr.yandex/${YC_REGISTRY_ID}/${IMAGE_NAME}"
+          TAG_SHA="${GITHUB_SHA}"
+          TAG_LATEST="latest"
+
+          echo "IMAGE=$IMAGE" >> $GITHUB_ENV
+          echo "TAG_LATEST=$TAG_LATEST" >> $GITHUB_ENV
+
+          echo "Building image $IMAGE:$TAG_SHA"
+          docker build -t $IMAGE:$TAG_SHA -t $IMAGE:$TAG_LATEST .
+
+          echo "Pushing image to YCR..."
+          docker push $IMAGE:$TAG_SHA
+          docker push $IMAGE:$TAG_LATEST
+
+      - name: Setup SSH key for remote deploy
+        env:
+          YC_SSH_KEY: ${{ secrets.YC_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$YC_SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          echo "SSH key added"
+
+      - name: Deploy on Yandex Cloud Compute via Docker Compose
+        env:
+          YC_VM_IP: ${{ secrets.YC_VM_IP }}
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ secrets.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+          YC_REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
+        run: |
+          echo "Connecting to $YC_VM_IP"
+          ssh -o StrictHostKeyChecking=no ubuntu@$YC_VM_IP <<EOF
+          set -e
+
+          echo "Updating deployment directory..."
+          mkdir -p ~/rag-bot
+          cd ~/rag-bot
+
+          # Обновляем docker-compose.prod.yml из репозитория
+          # (либо git pull, если репо уже клонировано)
+          if [ ! -d ".git" ]; then
+            git clone https://github.com/${GITHUB_REPOSITORY}.git tmp-repo
+            cp tmp-repo/docker-compose.prod.yml .
+            rm -rf tmp-repo
+          else
+            git fetch origin rag
+            git reset --hard origin/rag
+            cp docker-compose.prod.yml ~/rag-bot/
+          fi
+
+          echo "🧾 Writing .env file for compose..."
+          cat > .env <<ENVFILE
+          YANDEX_FOLDER_ID=${YANDEX_FOLDER_ID}
+          YANDEX_API_KEY=${YANDEX_API_KEY}
+          YANDEX_LLM_MODEL=${YANDEX_LLM_MODEL}
+          EMBED_MODEL=sentence-transformers/all-MiniLM-L6-v2
+          INDEX_DIR=/app/index
+          KB_DIR=/app/knowledge_base
+          ENVFILE
+
+          echo "Pulling & restarting container..."
+          export YC_REGISTRY_ID=${YC_REGISTRY_ID}
+          docker compose -f docker-compose.prod.yml pull
+          docker compose -f docker-compose.prod.yml up -d
+
+          echo "Docker deployment completed on VM."
+          EOF
+
+      - name: Notify Telegram on success
+        if: success()
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          IMAGE: ${{ env.IMAGE }}
+          TAG_LATEST: ${{ env.TAG_LATEST }}
+        run: |
+          TEXT="RAG bot successfully deployed to Yandex Cloud Compute.
+Image: $IMAGE:$TAG_LATEST
+Commit: $GITHUB_SHA"
+          curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TELEGRAM_CHAT_ID}" \
+            -d "text=${TEXT}"
+          echo "Telegram notification sent."
