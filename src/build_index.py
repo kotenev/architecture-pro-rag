@@ -1,16 +1,19 @@
 #! /usr/bin/env python
-"""
-Запуск:
-python src/build_index.py --kb-dir ../knowledge_base --index-dir ../index
-"""
-import argparse, os, json, math
+import argparse
 from pathlib import Path
+import sys
+
 from sentence_transformers import SentenceTransformer
 import numpy as np
 import faiss
 from tqdm import tqdm
-from src.utils import load_txt_files, save_metadata
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+if __package__ is None or __package__ == "":
+    sys.path.append(str(Path(__file__).resolve().parent.parent))
+    from utils import load_txt_files, save_metadata  # type: ignore
+else:
+    from .utils import load_txt_files, save_metadata
 
 def chunk_texts(docs, chunk_size=500, chunk_overlap=50):
     splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
