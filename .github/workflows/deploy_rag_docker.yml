@@ -74,6 +74,19 @@ jobs:
           yc container registry configure-docker
           echo "Docker authenticated for YCR"
 
+      - name: Free disk space before Docker build
+        run: |
+          echo "Free space before cleanup:"
+          df -h
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          rm -rf ~/.cache/pip
+          docker system prune -af || true
+          docker builder prune -af || true
+          echo "Free space after cleanup:"
+          df -h
+
       - name: Build & Push Docker image to YCR
         env:
           YC_REGISTRY_ID: ${{ secrets.YC_REGISTRY_ID }}
