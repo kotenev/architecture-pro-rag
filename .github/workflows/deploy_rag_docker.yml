@@ -57,7 +57,8 @@ jobs:
           YC_CLOUD_ID: ${{ secrets.YANDEX_CLOUD_ID }}
         run: |
           echo "$YC_SERVICE_ACCOUNT_KEY" > $HOME/yc-service-account-key.json
-          IAM_TOKEN=$(yc iam create-token --service-account-key $HOME/yc-service-account-key.json)
+          yc config set $HOME/yc-service-account-key.json
+          IAM_TOKEN=$(yc iam create-token)
           yc config set token "$IAM_TOKEN"
           yc config set folder-id "$YC_FOLDER_ID"
           yc config set cloud-id "$YC_CLOUD_ID"
