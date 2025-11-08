@@ -50,6 +50,15 @@ jobs:
           echo "$HOME/yandex-cloud/bin" >> $GITHUB_PATH
           $HOME/yandex-cloud/bin/yc version
 
+      - name: Run tests
+        env:
+          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
+          YANDEX_API_KEY: ${{ env.YANDEX_API_KEY }}
+          YANDEX_LLM_MODEL: yandexgpt-5-lite
+        run: |
+          pytest -v tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
+
+
       - name: Generate IAM token from service account key
         env:
           YC_SERVICE_ACCOUNT_KEY: ${{ secrets.YC_SERVICE_ACCOUNT_KEY }}
@@ -65,14 +74,6 @@ jobs:
           rm -f $HOME/yc-service-account-key.json
           echo "IAM token generated and CLI configured"
           echo "YANDEX_API_KEY=$IAM_TOKEN" >> $GITHUB_ENV
-
-      - name: Run tests
-        env:
-          YANDEX_FOLDER_ID: ${{ secrets.YANDEX_FOLDER_ID }}
-          YANDEX_API_KEY: ${{ env.YANDEX_API_KEY }}
-          YANDEX_LLM_MODEL: yandexgpt-5-lite
-        run: |
-          pytest -v tests/test_rag_pipeline.py --maxfail=1 --disable-warnings
 
       - name: Configure Docker auth for YCR
         run: |
@@ -140,7 +141,7 @@ jobs:
           # Обновляем docker-compose.prod.yml из репозитория
           # (либо git pull, если репо уже клонировано)
           if [ ! -d ".git" ]; then
-            git clone https://github.com/${GITHUB_REPOSITORY}.git tmp-repo
+            git clone https://github.com/kotenev/architecture-pro-rag.git tmp-repo
             cp tmp-repo/docker-compose.prod.yml .
             rm -rf tmp-repo
           else
