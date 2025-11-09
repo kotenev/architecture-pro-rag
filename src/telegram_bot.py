@@ -110,7 +110,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply += f"Источники: {', '.join(set(sources))}\n"
 
         if explain and explain != "OK":
-            reply += f"\n🔍 {explain}"
+            reply += f"\n{explain}"
 
         await update.message.reply_text(reply)
         logger.info(f"Ответ отправлен пользователю @{username}")
