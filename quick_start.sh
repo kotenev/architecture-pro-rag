@@ -46,7 +46,11 @@ fi
 
 echo -e "${GREEN}Конфигурация найдена (.env)${NC}"
 
-export "$(cat .env | sed 's/#.*//g' | xargs)"
+while IFS='=' read -r key value; do
+    if [[ ! $key =~ ^# && -n $key ]]; then
+        export "$key=$value"
+    fi
+done < .env
 
 # Проверка индекса
 if [ ! -d "index" ] || [ ! -f "index/faiss.index" ]; then
