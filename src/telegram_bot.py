@@ -98,7 +98,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     fs_examples = fewshot_examples if use_fewshot else None
 
     try:
-        response = bot.answer(user_query, fewshot_examples=fs_examples)
+        response = bot.answer(user_query)
 
         answer = response["answer"]
         sources = response["source"]

@@ -1,0 +1,95 @@
+name: Deploy Telegram bot to Yandex Cloud Kubernetes
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: rag-telegram-bot
+  DEPLOYMENT_NAME: rag-telegram-bot
+
+jobs:
+  build-and-deploy:
+    name: Build image and deploy to Yandex Cloud
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+      K8S_NAMESPACE: ${{ secrets.YC_K8S_NAMESPACE }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-json-key: ${{ secrets.YC_SA_JSON_KEY }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Remember image with commit tag
+        id: image
+        run: echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Yandex Cloud CLI
+        uses: yc-actions/yc-install@v1
+
+      - name: Authenticate in Yandex Cloud
+        uses: yc-actions/yc-auth@v1
+        with:
+          yc-sa-json-key: ${{ secrets.YC_SA_JSON_KEY }}
+          yc-cloud-id: ${{ secrets.YC_CLOUD_ID }}
+          yc-folder-id: ${{ secrets.YC_FOLDER_ID }}
+
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v4
+        with:
+          version: "v1.29.0"
+
+      - name: Configure Kubernetes access
+        env:
+          YC_K8S_CLUSTER_ID: ${{ secrets.YC_K8S_CLUSTER_ID }}
+        run: |
+          yc managed-kubernetes cluster get-credentials \
+            --id "$YC_K8S_CLUSTER_ID" \
+            --external \
+            --force
+
+      - name: Deploy manifests
+        env:
+          K8S_NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          DEPLOYMENT_NAME: ${{ env.DEPLOYMENT_NAME }}
+        run: |
+          if [ -n "$K8S_NAMESPACE" ]; then
+            kubectl apply -n "$K8S_NAMESPACE" -f k8s/
+            kubectl set image deployment/$DEPLOYMENT_NAME bot=$IMAGE -n "$K8S_NAMESPACE"
+            kubectl rollout status deployment/$DEPLOYMENT_NAME -n "$K8S_NAMESPACE"
+          else
+            kubectl apply -f k8s/
+            kubectl set image deployment/$DEPLOYMENT_NAME bot=$IMAGE
+            kubectl rollout status deployment/$DEPLOYMENT_NAME
+          fi

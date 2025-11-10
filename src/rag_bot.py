@@ -171,6 +171,7 @@ class RAGBot:
         )
         regex = re.compile(rf"\b({pattern})\b", flags=re.IGNORECASE)
         return terms_map, regex, terms_lookup
+
     def _load_fewshot_examples(self, fewshot_file: Optional[str]) -> List[FewShotExample]:
         if not fewshot_file:
             return []
@@ -540,13 +541,13 @@ class RAGBot:
                 "source": sources,
                 "explain": explain_text,
                 "terms": mapped_terms,
-            }
+        }
 
         if not retrieved:
             return build_response(
-                "Я не знаю.",
-                [],
-                "Нет релевантных фрагментов в индексе.",
+               "Я не знаю.",
+               [],
+               "Нет релевантных фрагментов в индексе.",
             )
 
         retrieved_for_prompt = self._restore_original_terms(retrieved, replacements)
