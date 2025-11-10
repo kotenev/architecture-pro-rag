@@ -68,7 +68,7 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Статистика базы знаний:\n\n"
         f"Количество чанков: {num_chunks}\n"
         f"Топ-K для поиска: {bot.top_k}\n"
-        f"LLM модель: {bot.yandex_model}\n"
+        f"LLM модель: {bot.yandex_model or 'отключена'}\n"
         f"Few-shot примеров: {len(fewshot_examples)}\n"
         f"Режим: {context.user_data.get('use_fewshot', True) and 'Few-shot включён' or 'Few-shot выключен'}"
     )

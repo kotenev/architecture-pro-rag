@@ -1,7 +1,8 @@
 #! /usr/bin/env python
 import json
+import logging
 import re
-from typing import Dict, List, Optional, Sequence, Tuple
+from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import faiss
 from sentence_transformers import SentenceTransformer
@@ -10,42 +11,36 @@ from src.config import *
 
 from yandex_cloud_ml_sdk import YCloudML
 
+logger = logging.getLogger(__name__)
+
 
 class RAGBot:
 
-    def __init__(self, index_dir: str = INDEX_DIR, embed_model: str = EMBED_MODEL, top_k: int = TOP_K):
+    def __init__(
+            self,
+            index_dir: str = INDEX_DIR,
+            embed_model: str = EMBED_MODEL,
+            top_k: int = TOP_K,
+            use_llm: bool = True,
+    ):
         self.index_dir = Path(index_dir)
         self.model = SentenceTransformer(embed_model)
         self.top_k = top_k
         self._load_index()
         self.terms_map, self._terms_regex, self._terms_lookup = self._load_terms_map()
+        self.api_mode: Optional[str] = None
+        self.model_client = None
+        self.sdk: Optional[YCloudML] = None
+        self.yandex_model: Optional[str] = None
 
-        if not (YANDEX_FOLDER_ID and YANDEX_API_KEY):
-            raise RuntimeError("YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы (см. .env или config.py)")
-
-        self.sdk = YCloudML(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
-        raw_model_name = YANDEX_LLM_MODEL or "yandexgpt-5-lite"
-        self.yandex_model = self._resolve_model_uri(raw_model_name)
-
-        models_obj = getattr(self.sdk, "models", None)
-        if not models_obj:
-            raise RuntimeError("SDK не содержит атрибут 'models' — обновите yandex-cloud-ml-sdk")
-
-        if hasattr(models_obj, "chat"):
-            print("Используется режим CHAT (sdk.models.chat)")
-            model_builder = models_obj.chat
-            self.api_mode = "chat"
-        elif hasattr(models_obj, "completions"):
-            print("Используется режим COMPLETIONS (sdk.models.completions)")
-            model_builder = models_obj.completions
-            self.api_mode = "completions"
-        else:
-            raise RuntimeError("SDK не имеет методов chat или completions")
-
-        self.model_client = model_builder(self.yandex_model).configure(
-            temperature=0.0,
-            max_tokens=1024,
-        )
+        self.use_llm = bool(use_llm)
+        if self.use_llm and not (YANDEX_FOLDER_ID and YANDEX_API_KEY):
+            logger.warning(
+                "YANDEX_FOLDER_ID или YANDEX_API_KEY не заданы — работа без LLM"
+            )
+            self.use_llm = False
+        if self.use_llm:
+            self._init_llm_client()
 
     def _load_terms_map(self) -> Tuple[Dict[str, str], Optional[re.Pattern], Dict[str, str]]:
         terms_map: Dict[str, str] = {}
@@ -84,6 +79,37 @@ class RAGBot:
         regex = re.compile(rf"\b({pattern})\b", flags=re.IGNORECASE)
         return terms_map, regex, terms_lookup
 
+    def _init_llm_client(self) -> None:
+        if not (YANDEX_FOLDER_ID and YANDEX_API_KEY):
+            raise RuntimeError(
+                "Для использования LLM необходимо указать YANDEX_FOLDER_ID и YANDEX_API_KEY"
+            )
+
+        self.sdk = YCloudML(folder_id=YANDEX_FOLDER_ID, auth=YANDEX_API_KEY)
+        raw_model_name = YANDEX_LLM_MODEL or "yandexgpt-5-lite"
+        self.yandex_model = self._resolve_model_uri(raw_model_name)
+
+        models_obj = getattr(self.sdk, "models", None)
+        if not models_obj:
+            raise RuntimeError(
+                "SDK не содержит атрибут 'models' — обновите yandex-cloud-ml-sdk"
+            )
+
+        if hasattr(models_obj, "chat"):
+            logger.info("Используется режим CHAT (sdk.models.chat)")
+            model_builder = models_obj.chat
+            self.api_mode = "chat"
+        elif hasattr(models_obj, "completions"):
+            logger.info("Используется режим COMPLETIONS (sdk.models.completions)")
+            model_builder = models_obj.completions
+            self.api_mode = "completions"
+        else:
+            raise RuntimeError("SDK не имеет методов chat или completions")
+
+        self.model_client = model_builder(self.yandex_model).configure(
+            temperature=0.0,
+            max_tokens=1024,
+        )
 
     def _resolve_model_uri(self, model_value: str) -> str:
 
@@ -156,6 +182,62 @@ class RAGBot:
             if 0 <= idx < len(self.chunks):
                 results.append({"score": float(dist), "chunk": self.chunks[idx]})
         return results
+
+    def _text_contains_blocked_terms(self, text: str) -> bool:
+        lower = text.lower()
+        return any(bad.lower() in lower for bad in SAFETY_BLOCKLIST)
+
+    def _iter_sentences(self, text: str) -> Iterable[str]:
+        pieces = re.split(r"(?<=[.!?])\s+", text.strip())
+        for piece in pieces:
+            sentence = piece.strip()
+            if sentence:
+                yield sentence
+
+    def _compose_extractive_answer(
+        self,
+        query: str,
+        retrieved: Sequence[dict],
+        term_mappings: Sequence[Tuple[str, str]],
+    ) -> Optional[str]:
+        focus_terms = [orig for orig, _ in term_mappings if orig]
+        if not focus_terms:
+            focus_terms = [query]
+
+        focus_terms_lower = [term.lower() for term in focus_terms]
+
+        collected: List[str] = []
+        for item in retrieved:
+            chunk = item.get("chunk", {})
+            text = chunk.get("text", "").strip()
+            if not text or self._text_contains_blocked_terms(text):
+                continue
+
+            sentences = list(self._iter_sentences(text))
+            if not sentences:
+                continue
+
+            matching = [
+                sent for sent in sentences
+                if any(term in sent.lower() for term in focus_terms_lower)
+            ]
+
+            selected = matching or sentences[:2]
+
+            for sent in selected:
+                if sent not in collected:
+                    collected.append(sent)
+            if len(collected) >= 4:
+                break
+
+        if not collected:
+            return None
+
+        answer = " ".join(collected[:4])
+        if term_mappings:
+            mapping_note = "; ".join(f"{orig} → {mapped}" for orig, mapped in term_mappings)
+            answer += f"\n\nСопоставление терминов: {mapping_note}"
+        return answer
 
     def build_prompt(
             self,
@@ -273,28 +355,48 @@ class RAGBot:
             return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
 
         retrieved_for_prompt = self._restore_original_terms(retrieved, replacements)
-        prompt = self.build_prompt(query, retrieved_for_prompt, fewshot_examples, replacements)
-        try:
-            llm_out = self.call_llm(prompt)
-        except Exception as e:
+        source_ids = [r["chunk"]["source_id"] for r in retrieved]
+
+        if self.use_llm and self.model_client is not None:
+            prompt = self.build_prompt(query, retrieved_for_prompt, fewshot_examples, replacements)
+            try:
+                llm_out = self.call_llm(prompt)
+            except Exception as e:
+                return {
+                    "answer": "Ошибка при обращении к LLM",
+                    "source": source_ids,
+                    "explain": str(e),
+                }
+
+            ok, filtered = self.post_filter(llm_out)
+            if not ok:
+                return {
+                    "answer": "Я не могу ответить (фильтрация безопасности).",
+                    "source": source_ids,
+                    "explain": filtered,
+                }
+
+            normalized_answer = filtered.lower()
+            if "я не знаю" in normalized_answer or "i don't know" in normalized_answer:
+                source_ids = []
+
+            return {"answer": filtered, "source": source_ids, "explain": "OK"}
+
+        extractive_answer = self._compose_extractive_answer(
+            query, retrieved_for_prompt, replacements
+        )
+        if not extractive_answer:
             return {
-                "answer": "Ошибка при обращении к LLM",
-                "source": [r["chunk"]["source_id"] for r in retrieved],
-                "explain": str(e),
+                "answer": "Я не знаю.",
+                "source": [],
+                "explain": "Не удалось подобрать релевантные предложения.",
             }
 
-        ok, filtered = self.post_filter(llm_out)
-        if not ok:
+        if self._text_contains_blocked_terms(extractive_answer):
             return {
                 "answer": "Я не могу ответить (фильтрация безопасности).",
-                "source": [r["chunk"]["source_id"] for r in retrieved],
-                "explain": filtered,
+                "source": [],
+                "explain": "Ответ отклонён правилами безопасности.",
             }
 
-        source_ids = [r["chunk"]["source_id"] for r in retrieved]
-        normalized_answer = filtered.lower()
-        if "я не знаю" in normalized_answer or "i don't know" in normalized_answer:
-            source_ids = []
-
-        return {"answer": filtered, "source": source_ids, "explain": "OK"}
-
+        return {"answer": extractive_answer, "source": source_ids, "explain": "OK"}
