@@ -200,7 +200,12 @@ class RAGBot:
         retrieved: Sequence[dict],
         term_mappings: Sequence[Tuple[str, str]],
     ) -> Optional[str]:
-        focus_terms = [orig for orig, _ in term_mappings if orig]
+        focus_terms: List[str] = []
+        for original, mapped in term_mappings:
+            if original:
+                focus_terms.append(original)
+            if mapped:
+                focus_terms.append(mapped)
         if not focus_terms:
             focus_terms = [query]
 
@@ -235,8 +240,11 @@ class RAGBot:
 
         answer = " ".join(collected[:4])
         if term_mappings:
-            mapping_note = "; ".join(f"{orig} → {mapped}" for orig, mapped in term_mappings)
-            answer += f"\n\nСопоставление терминов: {mapping_note}"
+            mapping_note = "; ".join(
+                f"{orig} → {mapped}" for orig, mapped in term_mappings if orig and mapped
+            )
+            if mapping_note:
+                answer += f"\n\nСопоставление терминов: {mapping_note}"
         return answer
 
     def build_prompt(
@@ -351,52 +359,99 @@ class RAGBot:
     def answer(self, query: str, fewshot_examples: List[dict] = None):
         normalized_query, replacements = self._apply_terms_map(query)
         retrieved = self.retrieve(normalized_query)
+
+
+        mapped_terms = [
+            {"original": orig, "internal": mapped}
+            for orig, mapped in replacements
+            if orig and mapped
+        ]
+
+        def build_response(answer_text, sources, explain_text):
+            return {
+                "answer": answer_text,
+                "source": sources,
+                "explain": explain_text,
+                "terms": mapped_terms,
+            }
+
         if not retrieved:
-            return {"answer": "Я не знаю.", "source": [], "explain": "Нет релевантных фрагментов."}
+            return build_response(
+                "Я не знаю.",
+                [],
+                "Нет релевантных фрагментов.",
+            )
 
         retrieved_for_prompt = self._restore_original_terms(retrieved, replacements)
-        source_ids = [r["chunk"]["source_id"] for r in retrieved]
-
-        if self.use_llm and self.model_client is not None:
-            prompt = self.build_prompt(query, retrieved_for_prompt, fewshot_examples, replacements)
-            try:
-                llm_out = self.call_llm(prompt)
-            except Exception as e:
-                return {
-                    "answer": "Ошибка при обращении к LLM",
-                    "source": source_ids,
-                    "explain": str(e),
-                }
-
-            ok, filtered = self.post_filter(llm_out)
-            if not ok:
-                return {
-                    "answer": "Я не могу ответить (фильтрация безопасности).",
-                    "source": source_ids,
-                    "explain": filtered,
-                }
-
-            normalized_answer = filtered.lower()
-            if "я не знаю" in normalized_answer or "i don't know" in normalized_answer:
-                source_ids = []
-
-            return {"answer": filtered, "source": source_ids, "explain": "OK"}
+        source_ids = list(dict.fromkeys(r["chunk"]["source_id"] for r in retrieved))
 
         extractive_answer = self._compose_extractive_answer(
             query, retrieved_for_prompt, replacements
         )
+
+        if self.use_llm and self.model_client is not None:
+            prompt = self.build_prompt(
+                query, retrieved_for_prompt, fewshot_examples, replacements
+            )
+            try:
+                llm_out = self.call_llm(prompt)
+            except Exception as e:
+                return build_response(
+                    "Ошибка при обращении к LLM",
+                    source_ids,
+                    str(e),
+                )
+
+            ok, filtered = self.post_filter(llm_out)
+            if not ok:
+                return build_response(
+                    "Я не могу ответить (фильтрация безопасности).",
+                    source_ids,
+                    filtered,
+                )
+
+            normalized_answer = filtered.lower()
+            unknown_markers = [
+                "я не знаю",
+                "нет информации",
+                "информации нет",
+                "не найдено",
+                "i don't know",
+            ]
+            if any(marker in normalized_answer for marker in unknown_markers):
+                if extractive_answer:
+                    return build_response(
+                        extractive_answer,
+                        source_ids,
+                        "Ответ построен на основе ближайших фрагментов FAISS.",
+                    )
+                return build_response(
+                    "Я не знаю.",
+                    [],
+                    "LLM не нашла ответа и не удалось построить краткий обзор.",
+                )
+
+            if replacements and "сопоставление терминов" not in normalized_answer:
+                mapping_note = "; ".join(
+                    f"{orig} → {mapped}" for orig, mapped in replacements if orig and mapped
+                )
+                if mapping_note:
+                    filtered = f"{filtered}\n\nСопоставление терминов: {mapping_note}"
+
+            return build_response(filtered, source_ids, "OK")
+
         if not extractive_answer:
-            return {
-                "answer": "Я не знаю.",
-                "source": [],
-                "explain": "Не удалось подобрать релевантные предложения.",
-            }
+            return build_response(
+                "Я не знаю.",
+                [],
+                "Не удалось подобрать релевантные предложения.",
+            )
 
         if self._text_contains_blocked_terms(extractive_answer):
-            return {
-                "answer": "Я не могу ответить (фильтрация безопасности).",
-                "source": [],
-                "explain": "Ответ отклонён правилами безопасности.",
-            }
+            return build_response(
+                "Я не могу ответить (фильтрация безопасности).",
+                [],
+                "Ответ отклонён правилами безопасности.",
+            )
 
-        return {"answer": extractive_answer, "source": source_ids, "explain": "OK"}
+        return build_response(extractive_answer, source_ids, "OK")
