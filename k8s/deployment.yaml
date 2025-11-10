@@ -1,0 +1,66 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rag-telegram-bot
+  labels:
+    app: rag-telegram-bot
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: rag-telegram-bot
+  template:
+    metadata:
+      labels:
+        app: rag-telegram-bot
+    spec:
+      imagePullSecrets:
+        - name: yc-registry
+      containers:
+        - name: bot
+          # Базовый тег будет заменён на sha-тег из workflow с помощью kubectl set image
+          image: cr.yandex/REGISTRY_ID_PLACEHOLDER/rag-telegram-bot:latest
+          imagePullPolicy: Always
+          env:
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: rag-telegram-bot-secrets
+                  key: telegramBotToken
+            - name: YANDEX_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: rag-telegram-bot-secrets
+                  key: yandexApiKey
+            - name: YANDEX_FOLDER_ID
+              valueFrom:
+                secretKeyRef:
+                  name: rag-telegram-bot-secrets
+                  key: yandexFolderId
+            - name: KB_DIR
+              value: /app/knowledge_base
+            - name: INDEX_DIR
+              value: /app/index
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "256Mi"
+            limits:
+              cpu: "500m"
+              memory: "512Mi"
+          livenessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pgrep -f telegram_bot.py"
+            initialDelaySeconds: 60
+            periodSeconds: 60
+          readinessProbe:
+            exec:
+              command:
+                - /bin/sh
+                - -c
+                - "pgrep -f telegram_bot.py"
+            initialDelaySeconds: 30
+            periodSeconds: 30
