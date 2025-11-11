@@ -81,7 +81,7 @@ case $MODE in
 
     repl)
         echo -e "${GREEN}Запуск консольного REPL...${NC}"
-        python repl.py
+        python src/repl.py
         ;;
 
     test)
