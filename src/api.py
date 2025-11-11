@@ -23,7 +23,7 @@ class Query(BaseModel):
 @app.post("/ask")
 def ask(q: Query):
     fs = fewshot_examples if q.use_fewshot else None
-    resp = bot.answer(q.q, fewshot_examples=fs)
+    resp = bot.answer(q.q)
     return resp
 
 @app.get("/health")
