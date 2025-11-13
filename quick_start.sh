@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# ./quick_start.sh [telegram|api|repl|test]
+# ./quick_start.sh [telegram|api|repl|test|docker]
 
 set -e
 
@@ -52,7 +52,6 @@ while IFS='=' read -r key value; do
     fi
 done < .env
 
-# Проверка индекса
 if [ ! -d "index" ] || [ ! -f "index/faiss.index" ]; then
     echo -e "${RED}Индекс не найден${NC}"
     echo -e "${YELLOW}Запустите построение индекса:${NC}"
@@ -86,7 +85,7 @@ case $MODE in
 
     test)
         echo -e "${GREEN}Запуск тестов...${NC}"
-        python test_dialogs.py
+        python src/test_dialogs.py
         ;;
 
     docker)

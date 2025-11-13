@@ -11,7 +11,7 @@ tests = [
 
 for q, use_fs in tests:
     print("Q:", q)
-    resp = bot.answer(q, fewshot_examples=None)
+    resp = bot.answer(q)
     print("Answer:", resp["answer"])
     print("Sources:", resp["source"])
     print("Explain:", resp["explain"])
