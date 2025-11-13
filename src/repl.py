@@ -1,7 +1,6 @@
 #! /usr/bin/env python
 
 from src.rag_bot import RAGBot
-import json, sys
 bot = RAGBot()
 
 fewshot = [
