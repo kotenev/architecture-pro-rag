@@ -63,6 +63,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--kb-dir", default="../knowledge_base")
     parser.add_argument("--index-dir", default="../index")
-    parser.add_argument("--embed-model", default="sentence-transformers/all-MiniLM-L6-v2")
+    parser.add_argument("--embed-model", default="intfloat/Multilingual-E5-large")
     args = parser.parse_args()
     build_index(args.kb_dir, args.index_dir, args.embed_model)

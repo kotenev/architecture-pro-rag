@@ -2346,6 +2346,6 @@
       "text": "Щекотка\n- Могут защекотать до смерти.\nВ популярной культуре\n[\n]\nВ игре The Witcher 3: Wild Hunt появляется персонаж Ярополк.\nГалерея\n[\n]"
     }
   ],
-  "embed_dim": 384,
-  "model": "sentence-transformers/all-MiniLM-L6-v2"
+  "embed_dim": 1024,
+  "model": "intfloat/Multilingual-E5-large"
 }

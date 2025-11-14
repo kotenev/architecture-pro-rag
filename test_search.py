@@ -8,7 +8,7 @@ from langchain_community.vectorstores.faiss import FAISS
 class VectorSearchTester:
     def __init__(self, 
                  index_path: str = "faiss_index",
-                 model_name: str = "sentence-transformers/all-MiniLM-L6-v2"):
+                 model_name: str = "intfloat/Multilingual-E5-large"):
         self.index_path = index_path
         self.model_name = model_name
 
