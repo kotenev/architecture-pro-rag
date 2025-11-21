@@ -33,6 +33,7 @@ class Query(BaseModel):
 @app.post("/ask")
 def ask(q: Query):
     fs = fewshot_examples if q.use_fewshot else None
+    logger.info("Received question: %s (use_fewshot=%s)", q.q, q.use_fewshot)
     resp = bot.answer(q.q)
     return resp
 
