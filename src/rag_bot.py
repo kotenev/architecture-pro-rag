@@ -529,6 +529,20 @@ class RAGBot:
         normalized_query, replacements = self._apply_terms_map(query)
         retrieved = self.retrieve(normalized_query)
 
+        if retrieved:
+            logger.info("Найденные чанки (%d):", len(retrieved))
+            for idx, item in enumerate(retrieved):
+                chunk = item.chunk
+                metadata_log = {"source": chunk.source_id, "chunk_id": chunk.chunk_id}
+                metadata_log.update(chunk.metadata)
+                logger.info(
+                    "[%d] score = %.4f\nmetadata = %s\npage_content =\n\"%s\"",
+                    idx,
+                    item.score,
+                    json.dumps(metadata_log, ensure_ascii=False, indent=2),
+                    chunk.text.strip(),
+                )
+
         mapped_terms = [
             {"original": orig, "internal": mapped}
             for orig, mapped in replacements
