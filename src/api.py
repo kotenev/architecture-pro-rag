@@ -1,10 +1,20 @@
 #! /usr/bin/env python
 
+import json
+import logging
+import os
+
 from fastapi import FastAPI
 from pydantic import BaseModel
-from src.rag_bot import RAGBot
+
 from src.config import FEWSHOT_FILE
-import json, os
+from src.rag_bot import RAGBot
+
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO,
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="RAG Bot")
 
