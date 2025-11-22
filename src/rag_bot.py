@@ -443,6 +443,24 @@ class RAGBot:
         )
         return "\n".join(mapping_note_lines)
 
+    def _build_unknown_answer_text(
+        self, query: str, reason: str, context_hint: Optional[str] = None
+    ) -> str:
+        steps: List[str] = [
+            f"1. Ищу информацию по запросу: \"{query}\" в предоставленном контексте.",
+        ]
+
+        next_step = 2
+        if context_hint:
+            steps.append(f"{next_step}. {context_hint}")
+            next_step += 1
+
+        steps.append(f"{next_step}. {reason}")
+        steps.append(
+            "Ответ: Я не знаю. В предоставленной базе знаний нет информации по этому запросу."
+        )
+        return "\n".join(steps)
+
     def build_prompt(
             self,
             query: str,
@@ -563,10 +581,15 @@ class RAGBot:
         }
 
         if not retrieved:
+            unknown_answer = self._build_unknown_answer_text(
+                query,
+                "Нет релевантных фрагментов в базе знаний.",
+                "Контекст не найден — индекс не содержит подходящих данных.",
+            )
             return build_response(
-               "Я не знаю.",
-               [],
-               "Нет релевантных фрагментов в индексе.",
+               unknown_answer,
+                [],
+                "Нет релевантных фрагментов в индексе.",
             )
 
         retrieved_for_prompt = self._restore_original_terms(retrieved, replacements)
@@ -610,8 +633,13 @@ class RAGBot:
                         source_ids,
                         "Ответ построен на основе ближайших фрагментов FAISS.",
                     )
+                unknown_answer = self._build_unknown_answer_text(
+                    query,
+                    "LLM не смогла найти ответ в доступных фрагментах.",
+                    f"Найден контекст с источниками: {', '.join(source_ids)}." if source_ids else None,
+                )
                 return build_response(
-                    "Я не знаю.",
+                    unknown_answer,
                     [],
                     "LLM не нашла ответа; fallback по ближайшим фрагментам отключён.",
                 )
@@ -622,12 +650,16 @@ class RAGBot:
                 )
                 if mapping_note:
                     filtered = f"{filtered}\n\nСопоставление терминов: {mapping_note}"
-
             return build_response(filtered, source_ids, "OK")
 
         if not extractive_answer:
+            unknown_answer = self._build_unknown_answer_text(
+                query,
+                "Не удалось подобрать релевантные предложения для ответа.",
+                f"Найден контекст с источниками: {', '.join(source_ids)}." if source_ids else None,
+            )
             return build_response(
-                "Я не знаю.",
+                unknown_answer,
                 [],
                 "Не удалось подобрать релевантные предложения.",
             )
