@@ -22,6 +22,7 @@ from .config import (
     SAFETY_BLOCKLIST,
     TERMS_MAP_FILE,
     TOP_K,
+    USE_EXTRACTIVE_FALLBACK_ON_LLM_UNKNOWN,
     YANDEX_API_KEY,
     YANDEX_FOLDER_ID,
     YANDEX_LLM_MODEL,
@@ -57,6 +58,7 @@ class RAGBot:
             top_k: int = TOP_K,
             fewshot_file: str = FEWSHOT_FILE,
             use_llm: bool = True,
+            use_extractive_fallback_on_llm_unknown: bool = USE_EXTRACTIVE_FALLBACK_ON_LLM_UNKNOWN,
     ) -> None:
         self.index_dir = Path(index_dir)
         self.embed_model_name = embed_model
@@ -71,6 +73,9 @@ class RAGBot:
         self.fewshot_examples = self._load_fewshot_examples(self.fewshot_file)
 
         self.use_llm = bool(use_llm)
+        self.use_extractive_fallback_on_llm_unknown = bool(
+            use_extractive_fallback_on_llm_unknown
+        )
         self.api_mode: Optional[str] = None
         self.model_client = None
         self.sdk: Optional[YCloudML] = None
@@ -599,7 +604,7 @@ class RAGBot:
                 "i don't know",
             ]
             if any(marker in normalized_answer for marker in unknown_markers):
-                if extractive_answer:
+                if self.use_extractive_fallback_on_llm_unknown and extractive_answer:
                     return build_response(
                         extractive_answer,
                         source_ids,
@@ -608,7 +613,7 @@ class RAGBot:
                 return build_response(
                     "Я не знаю.",
                     [],
-                    "LLM не нашла ответа и не удалось построить краткий обзор.",
+                    "LLM не нашла ответа; fallback по ближайшим фрагментам отключён.",
                 )
 
             if replacements and "сопоставление терминов" not in normalized_answer:
