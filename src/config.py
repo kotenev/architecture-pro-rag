@@ -19,3 +19,13 @@ FEWSHOT_FILE = os.environ.get("FEWSHOT_FILE", str(BASE_DIR / "examples" / "fewsh
 TERMS_MAP_FILE = os.environ.get("TERMS_MAP_FILE", str(BASE_DIR / "terms_map.json"))
 
 SAFETY_BLOCKLIST = ["superpassword", "swordfish", "ignore all instructions", "root-password"]
+
+def _as_bool(value: str, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
+USE_EXTRACTIVE_FALLBACK_ON_LLM_UNKNOWN = _as_bool(
+    os.environ.get("USE_EXTRACTIVE_FALLBACK_ON_LLM_UNKNOWN"), default=False
+)
