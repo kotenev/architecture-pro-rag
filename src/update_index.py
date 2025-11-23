@@ -246,8 +246,14 @@ class IndexUpdater:
     def _save_update_log(self):
         log_file = LOG_DIR / f"update_summary_{datetime.now().strftime('%Y%m%d')}.json"
 
+        stats_to_save = self.stats.copy()
+
+        for key in ("start_time", "end_time"):
+            if isinstance(stats_to_save.get(key), datetime):
+                stats_to_save[key] = stats_to_save[key].isoformat()
+
         with open(log_file, 'w', encoding='utf-8') as f:
-            json.dump(self.stats, f, ensure_ascii=False, indent=2)
+            json.dump(stats_to_save, f, ensure_ascii=False, indent=2)
 
         duration = (self.stats["end_time"] - self.stats["start_time"]).total_seconds()
         logger.info("=" * 60)
