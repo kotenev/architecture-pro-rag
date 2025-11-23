@@ -33,12 +33,14 @@ def scrape_and_clean(url: str):
         print(f"Ошибка скачивания {url}: {error}")
         return None, None
 
+def _sanitize_filename(name: str, default: str = "page") -> str:
+    sanitized = re.sub(r"[^\w-]+", "_", name, flags=re.UNICODE).strip("_")
+    return sanitized or default
 
 def _derive_filename(url: str) -> str:
     path = urlparse(url).path.rstrip("/")
     slug = path.split("/")[-1] or "page"
-    sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", slug).strip("_")
-    return f"{sanitized or 'page'}.txt"
+    return f"{_sanitize_filename(slug)}.txt"
 
 
 def parse_fandom_page(url: str, output_path: str | None = None, knowledge_base_dir: str = "knowledge_base") -> str:
@@ -49,11 +51,15 @@ def parse_fandom_page(url: str, output_path: str | None = None, knowledge_base_d
     if output_path is None:
         os.makedirs(knowledge_base_dir, exist_ok=True)
         filename_source = page_title or _derive_filename(url).removesuffix(".txt")
-        sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", filename_source).strip("_")
-        output_path = os.path.join(knowledge_base_dir, f"{sanitized or 'page'}.txt")
+        sanitized = _sanitize_filename(filename_source)
+        output_path = os.path.join(knowledge_base_dir, f"{sanitized}.txt")
 
     with open(output_path, "w", encoding="utf-8") as file:
         file.write(text)
+
+    url_output_path = f"{os.path.splitext(output_path)[0]}.url"
+    with open(url_output_path, "w", encoding="utf-8") as url_file:
+        url_file.write(url)
 
     return output_path
 
