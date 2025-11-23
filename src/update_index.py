@@ -122,9 +122,10 @@ class IndexUpdater:
 
         return text
 
-    def _find_new_and_modified_files(self) -> Tuple[List[Path], List[Path]]:
+    def _find_new_and_modified_files(self) -> Tuple[List[Path], List[Path], List[Path]]:
         new_files = []
         modified_files = []
+        unchanged_files = []
 
         for filepath in self.incoming_dir.glob("*.txt"):
             file_hash = self._calculate_file_hash(filepath)
@@ -136,8 +137,11 @@ class IndexUpdater:
             elif self.processed_files[filename] != file_hash:
                 modified_files.append(filepath)
                 logger.info(f"Изменённый файл: {filename}")
+            else:
+                unchanged_files.append(filepath)
+                logger.info(f"Файл без изменений: {filename}")
 
-        return new_files, modified_files
+        return new_files, modified_files, unchanged_files
 
     def _process_document(self, filepath: Path) -> List[Dict]:
         try:
@@ -228,6 +232,24 @@ class IndexUpdater:
         shutil.move(str(filepath), str(destination))
         logger.info(f"Файл {filepath.name} перемещён в {destination}")
 
+    def _cleanup_unchanged_files(self, files: List[Path]):
+        if not files:
+            return
+
+        for filepath in files:
+            destination = self.kb_dir / filepath.name
+
+            if destination.exists():
+                filepath.unlink()
+                logger.info(
+                    f"Файл {filepath.name} уже был обработан ранее и удалён из incoming"
+                )
+            else:
+                shutil.move(str(filepath), str(destination))
+                logger.info(
+                    f"Файл {filepath.name} ранее был обработан и перемещён в {destination}"
+                )
+
     def _save_index(self):
         index_file = self.index_dir / "faiss.index"
         metadata_file = self.index_dir / "metadata.json"
@@ -272,10 +294,12 @@ class IndexUpdater:
         logger.info("Начало обновления индекса...")
 
         try:
-            new_files, modified_files = self._find_new_and_modified_files()
+            new_files, modified_files, unchanged_files = self._find_new_and_modified_files()
 
             self.stats["new_files"] = len(new_files)
             self.stats["modified_files"] = len(modified_files)
+
+            self._cleanup_unchanged_files(unchanged_files)
 
             if not new_files and not modified_files:
                 logger.info("Нет новых или изменённых файлов")
