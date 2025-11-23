@@ -4,6 +4,7 @@ import json
 import logging
 import hashlib
 import shutil
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Tuple
@@ -12,6 +13,7 @@ import faiss
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
+from faker import Faker
 
 from config import (
     EMBED_MODEL,
@@ -46,11 +48,16 @@ class IndexUpdater:
 
         self.model = SentenceTransformer(EMBED_MODEL)
 
+        self.fake = Faker("ru_RU")
+        self.used_phrases: set = set()
+
         self.processed_files = self._load_processed_files()
 
         self.index, self.chunks, self.metadata = self._load_existing_index()
 
         self.terms_map = self._load_terms_map()
+        self.used_phrases.update(self.terms_map.values())
+        self.terms_map_updated = False
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
@@ -104,6 +111,47 @@ class IndexUpdater:
                 return json.load(f)
         return {}
 
+    def _save_terms_map(self):
+        if not TERMS_MAP_FILE:
+            return
+
+        with open(TERMS_MAP_FILE, 'w', encoding='utf-8') as f:
+            json.dump(self.terms_map, f, ensure_ascii=False, indent=4)
+
+    def _generate_replacement_phrase(self, term: str) -> str:
+        word_count = max(1, len(re.findall(r'[А-Яа-яЁё-]+', term)))
+
+        def unique_first_name() -> str:
+            return self.fake.unique.first_name()
+
+        phrase = None
+        attempts = 0
+        while phrase is None or phrase in self.used_phrases:
+            attempts += 1
+            if attempts > 100:
+                self.fake.unique.clear()
+                attempts = 0
+
+            if word_count == 1:
+                phrase = unique_first_name()
+            elif word_count == 2:
+                phrase = f"{unique_first_name()} {self.fake.unique.last_name()}"
+            else:
+                words = [unique_first_name() for _ in range(word_count)]
+                phrase = ' '.join(words)
+
+        self.used_phrases.add(phrase)
+        return phrase
+
+    def _ensure_term_mapping(self, original_term: str) -> str:
+        if original_term in self.terms_map:
+            return self.terms_map[original_term]
+
+        replacement = self._generate_replacement_phrase(original_term)
+        self.terms_map[original_term] = replacement
+        self.terms_map_updated = True
+        return replacement
+
     def _calculate_file_hash(self, filepath: Path) -> str:
         hash_md5 = hashlib.md5()
         with open(filepath, "rb") as f:
@@ -115,7 +163,6 @@ class IndexUpdater:
         if not self.terms_map:
             return text
 
-        import re
         for original, replacement in self.terms_map.items():
             pattern = rf'\b{re.escape(original)}\b'
             text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
@@ -143,7 +190,7 @@ class IndexUpdater:
 
         return new_files, modified_files, unchanged_files
 
-    def _process_document(self, filepath: Path) -> List[Dict]:
+    def _process_document(self, filepath: Path, doc_id: str, filename: str) -> List[Dict]:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 text = f.read()
@@ -152,14 +199,13 @@ class IndexUpdater:
 
             chunks_text = self.text_splitter.split_text(text)
 
-            doc_id = filepath.stem
             chunks = []
             for i, chunk_text in enumerate(chunks_text):
                 chunks.append({
                     "source_id": doc_id,
                     "chunk_id": f"{doc_id}_{i}",
                     "text": chunk_text,
-                    "filename": filepath.name,
+                    "filename": filename,
                     "processed_at": datetime.now().isoformat()
                 })
 
@@ -227,8 +273,8 @@ class IndexUpdater:
 
         logger.info(f"Добавлено {len(new_chunks)} новых чанков")
 
-    def _move_processed_file(self, filepath: Path):
-        destination = self.kb_dir / filepath.name
+    def _move_processed_file(self, filepath: Path, transformed_filename: str):
+        destination = self.kb_dir / transformed_filename
         shutil.move(str(filepath), str(destination))
         logger.info(f"Файл {filepath.name} перемещён в {destination}")
 
@@ -237,7 +283,9 @@ class IndexUpdater:
             return
 
         for filepath in files:
-            destination = self.kb_dir / filepath.name
+            transformed_term = self._ensure_term_mapping(filepath.stem)
+            transformed_filename = f"{transformed_term.replace(' ', '_')}{filepath.suffix}"
+            destination = self.kb_dir / transformed_filename
 
             if destination.exists():
                 filepath.unlink()
@@ -305,39 +353,51 @@ class IndexUpdater:
                 logger.info("Нет новых или изменённых файлов")
                 self.stats["end_time"] = datetime.now()
                 self.stats["total_chunks"] = len(self.chunks)
+                if self.terms_map_updated:
+                    self._save_terms_map()
+                    self.terms_map_updated = False
                 self._save_update_log()
                 return
 
             for filepath in modified_files:
-                doc_id = filepath.stem
+                transformed_term = self._ensure_term_mapping(filepath.stem)
+                doc_id = transformed_term.replace(' ', '_')
+                transformed_filename = f"{doc_id}{filepath.suffix}"
                 logger.info(f"Обработка изменённого файла: {filepath.name}")
 
                 self._remove_old_chunks(doc_id)
 
-                new_chunks = self._process_document(filepath)
+                new_chunks = self._process_document(filepath, doc_id, transformed_filename)
 
                 if new_chunks:
                     self._add_new_chunks(new_chunks)
 
                     self.processed_files[filepath.name] = self._calculate_file_hash(filepath)
 
-                    self._move_processed_file(filepath)
+                    self._move_processed_file(filepath, transformed_filename)
 
             for filepath in new_files:
+                transformed_term = self._ensure_term_mapping(filepath.stem)
+                doc_id = transformed_term.replace(' ', '_')
+                transformed_filename = f"{doc_id}{filepath.suffix}"
                 logger.info(f"Обработка нового файла: {filepath.name}")
 
-                new_chunks = self._process_document(filepath)
+                new_chunks = self._process_document(filepath, doc_id, transformed_filename)
 
                 if new_chunks:
                     self._add_new_chunks(new_chunks)
 
                     self.processed_files[filepath.name] = self._calculate_file_hash(filepath)
 
-                    self._move_processed_file(filepath)
+                    self._move_processed_file(filepath, transformed_filename)
 
             self._save_index()
 
             self._save_processed_files()
+
+            if self.terms_map_updated:
+                self._save_terms_map()
+                self.terms_map_updated = False
 
             self.stats["end_time"] = datetime.now()
             self.stats["total_chunks"] = len(self.chunks)
