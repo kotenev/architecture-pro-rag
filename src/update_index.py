@@ -273,10 +273,20 @@ class IndexUpdater:
 
         logger.info(f"Добавлено {len(new_chunks)} новых чанков")
 
+    def _remove_related_url_file(self, filepath: Path):
+        url_file = self.incoming_dir / f"{filepath.stem}.url"
+        if url_file.exists():
+            url_file.unlink()
+            logger.info(
+                f"Удалён связанный URL-файл {url_file.name} для {filepath.name}"
+            )
+
     def _move_processed_file(self, filepath: Path, transformed_filename: str):
         destination = self.kb_dir / transformed_filename
         shutil.move(str(filepath), str(destination))
         logger.info(f"Файл {filepath.name} перемещён в {destination}")
+
+        self._remove_related_url_file(filepath)
 
     def _cleanup_unchanged_files(self, files: List[Path]):
         if not files:
