@@ -1,4 +1,5 @@
 #! /usr/bin/env python
+import argparse
 import inspect
 import json
 import re
@@ -69,8 +70,8 @@ class TermReplacement:
 
         if len(self.replacement_words) != len(self.original_words):
             raise ValueError(
-                "Replacement must have the same number of words as original term. "
-                f"Original '{original}', replacement '{replacement}'"
+                "Замена должна иметь то же количество слов, что и исходный термин. "
+                f"Оригинал '{original}', замена '{replacement}'"
             )
 
         self.original_parses = [_select_parse(word) for word in self.original_words]
@@ -180,7 +181,7 @@ def scrape_and_clean(url):
 
         return None
     except requests.exceptions.RequestException as e:
-        print(f"Error fetching {url}: {e}")
+        print(f"Ошибка загрузки {url}: {e}")
         return None
 
 def _generate_replacement_phrase(term: str, used_phrases: set) -> str:
@@ -221,7 +222,11 @@ def _load_fandom_pages(path: Path) -> Dict[str, str]:
             return json.load(f)
     return {}
 
-def process_fandom_pages(pages, knowledge_base_dir='knowledge_base'):
+def process_fandom_pages(
+    pages,
+    knowledge_base_dir: str = 'knowledge_base',
+    use_terms_map_only: bool = False,
+):
     knowledge_base_path = Path(knowledge_base_dir)
     knowledge_base_path.mkdir(exist_ok=True)
 
@@ -234,10 +239,16 @@ def process_fandom_pages(pages, knowledge_base_dir='knowledge_base'):
         try:
             term_replacements.append(TermReplacement(term, replacement))
         except ValueError as error:
-            print(f"Skipping term '{term}': {error}")
+            print(f"Пропускается термин '{term}': {error}")
 
     for term in pages.keys():
         if term in terms_map:
+            continue
+        if use_terms_map_only:
+            print(
+                f"Термин '{term}' отсутствует в terms_map.json; пропуск генерации из-за "
+                "флага --use-terms-map-only ."
+            )
             continue
 
         replacement = _generate_replacement_phrase(term, used_phrases)
@@ -246,10 +257,17 @@ def process_fandom_pages(pages, knowledge_base_dir='knowledge_base'):
         try:
             term_replacements.append(TermReplacement(term, replacement))
         except ValueError as error:
-            print(f"Skipping term '{term}': {error}")
+            print(f"Пропускается термин '{term}': {error}")
 
     for original_name, url in pages.items():
-        print(f"Processing {original_name}...")
+        if original_name not in terms_map:
+            print(
+                f"Пропускается '{original_name}' потому что он отсутствует в terms_map.json "
+                "и генерация новых замен отключена."
+            )
+            continue
+
+        print(f"Обработка {original_name}...")
         text = scrape_and_clean(url)
 
         if not text:
@@ -262,6 +280,27 @@ def process_fandom_pages(pages, knowledge_base_dir='knowledge_base'):
             f.write(transformed_text)
 
 if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description=(
+            "Парсинг страниц фандома и замена терминов с использованием существующих terms_map.json . "
+            "По умолчанию отсутствующие термины будут генерировать новые замены."
+        )
+    )
+    parser.add_argument(
+        "--use-terms-map-only",
+        action="store_true",
+        help=(
+            "Использовать только существующие замены из terms_map.json и пропускать страницы "
+            "без предопределенной замены."
+        ),
+    )
+
+    args = parser.parse_args()
+
     fandom_pages = _load_fandom_pages(FANDOM_PAGES_PATH)
-    process_fandom_pages(fandom_pages)
+    process_fandom_pages(
+        fandom_pages,
+        use_terms_map_only=args.use_terms_map_only,
+    )
+
 
