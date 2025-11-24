@@ -15,6 +15,8 @@ from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from faker import Faker
 
+from parse_fandom_pages import TermReplacement, replace_terms
+
 from config import (
     EMBED_MODEL,
     INDEX_DIR,
@@ -58,6 +60,7 @@ class IndexUpdater:
         self.terms_map = self._load_terms_map()
         self.used_phrases.update(self.terms_map.values())
         self.terms_map_updated = False
+        self.term_replacements: List[TermReplacement] = self._build_term_replacements()
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
@@ -111,6 +114,17 @@ class IndexUpdater:
                 return json.load(f)
         return {}
 
+    def _build_term_replacements(self) -> List[TermReplacement]:
+        replacements: List[TermReplacement] = []
+        for original, replacement in self.terms_map.items():
+            try:
+                replacements.append(TermReplacement(original, replacement))
+            except ValueError as exc:
+                logger.warning(
+                    "Не удалось добавить замену для '%s': %s", original, exc
+                )
+        return replacements
+
     def _save_terms_map(self):
         if not TERMS_MAP_FILE:
             return
@@ -150,6 +164,12 @@ class IndexUpdater:
         replacement = self._generate_replacement_phrase(original_term)
         self.terms_map[original_term] = replacement
         self.terms_map_updated = True
+        try:
+            self.term_replacements.append(TermReplacement(original_term, replacement))
+        except ValueError as exc:
+            logger.warning(
+                "Не удалось создать замену для '%s': %s", original_term, exc
+            )
         return replacement
 
     def _calculate_file_hash(self, filepath: Path) -> str:
@@ -160,14 +180,15 @@ class IndexUpdater:
         return hash_md5.hexdigest()
 
     def _apply_terms_replacement(self, text: str) -> str:
-        if not self.terms_map:
+        if not self.term_replacements:
             return text
 
-        for original, replacement in self.terms_map.items():
-            pattern = rf'\b{re.escape(original)}\b'
-            text = re.sub(pattern, replacement, text, flags=re.IGNORECASE)
+        return replace_terms(text, self.term_replacements)
 
-        return text
+    def _transform_file_content(self, filepath: Path) -> str:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            text = f.read()
+        return self._apply_terms_replacement(text)
 
     def _find_new_and_modified_files(self) -> Tuple[List[Path], List[Path], List[Path]]:
         new_files = []
@@ -190,12 +211,12 @@ class IndexUpdater:
 
         return new_files, modified_files, unchanged_files
 
-    def _process_document(self, filepath: Path, doc_id: str, filename: str) -> List[Dict]:
+    def _process_document(self, filepath: Path, doc_id: str, filename: str) -> Tuple[List[Dict], str]:
         try:
             with open(filepath, 'r', encoding='utf-8') as f:
                 text = f.read()
 
-            text = self._apply_terms_replacement(text)
+            text = self._transform_file_content(filepath)
 
             chunks_text = self.text_splitter.split_text(text)
 
@@ -209,12 +230,12 @@ class IndexUpdater:
                     "processed_at": datetime.now().isoformat()
                 })
 
-            return chunks
+            return chunks, text
 
         except Exception as e:
             logger.error(f"Ошибка обработки файла {filepath}: {e}")
             self.stats["errors"].append(f"{filepath.name}: {str(e)}")
-            return []
+            return [], ""
 
     def _remove_old_chunks(self, doc_id: str):
         indices_to_remove = []
@@ -281,10 +302,13 @@ class IndexUpdater:
                 f"Удалён связанный URL-файл {url_file.name} для {filepath.name}"
             )
 
-    def _move_processed_file(self, filepath: Path, transformed_filename: str):
+    def _move_processed_file(self, filepath: Path, transformed_filename: str, transformed_text: str):
         destination = self.kb_dir / transformed_filename
-        shutil.move(str(filepath), str(destination))
-        logger.info(f"Файл {filepath.name} перемещён в {destination}")
+        destination.write_text(transformed_text, encoding='utf-8')
+        filepath.unlink()
+        logger.info(
+            f"Файл {filepath.name} преобразован и сохранён в {destination}"
+        )
 
         self._remove_related_url_file(filepath)
 
@@ -296,17 +320,15 @@ class IndexUpdater:
             transformed_term = self._ensure_term_mapping(filepath.stem)
             transformed_filename = f"{transformed_term.replace(' ', '_')}{filepath.suffix}"
             destination = self.kb_dir / transformed_filename
+            transformed_text = self._transform_file_content(filepath)
 
-            if destination.exists():
-                filepath.unlink()
-                logger.info(
-                    f"Файл {filepath.name} уже был обработан ранее и удалён из incoming"
-                )
-            else:
-                shutil.move(str(filepath), str(destination))
-                logger.info(
-                    f"Файл {filepath.name} ранее был обработан и перемещён в {destination}"
-                )
+            destination.write_text(transformed_text, encoding='utf-8')
+            filepath.unlink()
+            logger.info(
+                f"Файл {filepath.name} обновлён с заменами и сохранён в {destination}"
+            )
+
+            self._remove_related_url_file(filepath)
 
     def _save_index(self):
         index_file = self.index_dir / "faiss.index"
@@ -377,14 +399,18 @@ class IndexUpdater:
 
                 self._remove_old_chunks(doc_id)
 
-                new_chunks = self._process_document(filepath, doc_id, transformed_filename)
+                new_chunks, transformed_text = self._process_document(
+                    filepath, doc_id, transformed_filename
+                )
 
                 if new_chunks:
                     self._add_new_chunks(new_chunks)
 
                     self.processed_files[filepath.name] = self._calculate_file_hash(filepath)
 
-                    self._move_processed_file(filepath, transformed_filename)
+                    self._move_processed_file(
+                        filepath, transformed_filename, transformed_text
+                    )
 
             for filepath in new_files:
                 transformed_term = self._ensure_term_mapping(filepath.stem)
@@ -392,14 +418,18 @@ class IndexUpdater:
                 transformed_filename = f"{doc_id}{filepath.suffix}"
                 logger.info(f"Обработка нового файла: {filepath.name}")
 
-                new_chunks = self._process_document(filepath, doc_id, transformed_filename)
+                new_chunks, transformed_text = self._process_document(
+                    filepath, doc_id, transformed_filename
+                )
 
                 if new_chunks:
                     self._add_new_chunks(new_chunks)
 
                     self.processed_files[filepath.name] = self._calculate_file_hash(filepath)
 
-                    self._move_processed_file(filepath, transformed_filename)
+                    self._move_processed_file(
+                        filepath, transformed_filename, transformed_text
+                    )
 
             self._save_index()
 
