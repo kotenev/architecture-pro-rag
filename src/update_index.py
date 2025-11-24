@@ -367,17 +367,52 @@ class IndexUpdater:
         for filepath in files:
             self._register_fandom_page(filepath)
             transformed_term = self._ensure_term_mapping(filepath.stem)
-            transformed_filename = f"{transformed_term.replace(' ', '_')}{filepath.suffix}"
-            destination = self.kb_dir / transformed_filename
-            transformed_text = self._transform_file_content(filepath)
-
-            destination.write_text(transformed_text, encoding='utf-8')
-            filepath.unlink()
             logger.info(
-                f"Файл {filepath.name} обновлён с заменами и сохранён в {destination}"
+                "Файл %s уже обработан ранее. Термин '%s' сохранён без изменений",
+                filepath.name,
+                transformed_term,
             )
 
+            filepath.unlink()
             self._remove_related_url_file(filepath)
+
+    def _update_kb_files_from_terms_map(self):
+        for filepath in self.kb_dir.glob("*.txt"):
+            if filepath.parent == self.incoming_dir:
+                continue
+
+            stem_variants = [filepath.stem, filepath.stem.replace('_', ' ')]
+            original_term = None
+            for variant in stem_variants:
+                if variant in self.terms_map:
+                    original_term = variant
+                    break
+
+            if not original_term:
+                continue
+
+            replacement = self.terms_map[original_term]
+            transformed_filename = f"{replacement.replace(' ', '_')}{filepath.suffix}"
+            destination = self.kb_dir / transformed_filename
+            original_text = filepath.read_text(encoding='utf-8')
+            transformed_text = self._apply_terms_replacement(original_text)
+
+            needs_rename = filepath.name != transformed_filename
+            needs_content_update = original_text != transformed_text
+
+            if not needs_rename and not needs_content_update:
+                continue
+
+            destination.write_text(transformed_text, encoding='utf-8')
+
+            if destination != filepath:
+                filepath.unlink()
+
+            logger.info(
+                "Файл %s обновлён согласно текущему terms_map как %s",
+                filepath.name,
+                destination.name,
+            )
 
     def _save_index(self):
         index_file = self.index_dir / "faiss.index"
@@ -423,6 +458,8 @@ class IndexUpdater:
         logger.info("Начало обновления индекса...")
 
         try:
+            self._update_kb_files_from_terms_map()
+
             new_files, modified_files, unchanged_files = self._find_new_and_modified_files()
 
             self.stats["new_files"] = len(new_files)
