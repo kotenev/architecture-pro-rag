@@ -17,6 +17,7 @@ YANDEX_LLM_MODEL = os.environ.get("YANDEX_LLM_MODEL", "yandexgpt-5-lite")
 
 FEWSHOT_FILE = os.environ.get("FEWSHOT_FILE", str(BASE_DIR / "examples" / "fewshot.jsonl"))
 TERMS_MAP_FILE = os.environ.get("TERMS_MAP_FILE", str(BASE_DIR / "terms_map.json"))
+FANDOM_PAGES_FILE = os.environ.get("FANDOM_PAGES_FILE", str(BASE_DIR / "fandom_pages.json"))
 
 SAFETY_BLOCKLIST = ["superpassword", "swordfish", "ignore all instructions", "root-password"]
 
