@@ -26,6 +26,8 @@ fi
 
 source .venv/bin/activate
 
+export PYTHONPATH="$(pwd)"
+
 if [ ! -f ".venv/installed" ]; then
     echo -e "${YELLOW}Устанавливаю зависимости...${NC}"
     pip install --upgrade pip
