@@ -21,6 +21,7 @@ from config import (
     EMBED_MODEL,
     INDEX_DIR,
     KB_DIR,
+    FANDOM_PAGES_FILE,
     TERMS_MAP_FILE,
 )
 
@@ -44,6 +45,7 @@ class IndexUpdater:
         self.incoming_dir = self.kb_dir / "incoming"
         self.index_dir = Path(INDEX_DIR)
         self.processed_file = self.index_dir / "processed_files.json"
+        self.fandom_pages_file = Path(FANDOM_PAGES_FILE) if FANDOM_PAGES_FILE else None
 
         self.incoming_dir.mkdir(parents=True, exist_ok=True)
         self.index_dir.mkdir(parents=True, exist_ok=True)
@@ -61,6 +63,8 @@ class IndexUpdater:
         self.used_phrases.update(self.terms_map.values())
         self.terms_map_updated = False
         self.term_replacements: List[TermReplacement] = self._build_term_replacements()
+        self.fandom_pages = self._load_fandom_pages()
+        self.fandom_pages_updated = False
 
         self.text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=500,
@@ -114,6 +118,12 @@ class IndexUpdater:
                 return json.load(f)
         return {}
 
+    def _load_fandom_pages(self) -> Dict[str, str]:
+        if self.fandom_pages_file and self.fandom_pages_file.exists():
+            with open(self.fandom_pages_file, 'r', encoding='utf-8') as f:
+                return json.load(f)
+        return {}
+
     def _build_term_replacements(self) -> List[TermReplacement]:
         replacements: List[TermReplacement] = []
         for original, replacement in self.terms_map.items():
@@ -131,6 +141,14 @@ class IndexUpdater:
 
         with open(TERMS_MAP_FILE, 'w', encoding='utf-8') as f:
             json.dump(self.terms_map, f, ensure_ascii=False, indent=4)
+
+    def _save_fandom_pages(self):
+        if not self.fandom_pages_file:
+            return
+
+        self.fandom_pages_file.parent.mkdir(parents=True, exist_ok=True)
+        with open(self.fandom_pages_file, 'w', encoding='utf-8') as f:
+            json.dump(self.fandom_pages, f, ensure_ascii=False, indent=4)
 
     def _generate_replacement_phrase(self, term: str) -> str:
         word_count = max(1, len(re.findall(r'[А-Яа-яЁё-]+', term)))
@@ -171,6 +189,36 @@ class IndexUpdater:
                 "Не удалось создать замену для '%s': %s", original_term, exc
             )
         return replacement
+
+    def _register_fandom_page(self, filepath: Path):
+        if not self.fandom_pages_file:
+            return
+
+        url_file = self.incoming_dir / f"{filepath.stem}.url"
+        if not url_file.exists():
+            return
+
+        url = url_file.read_text(encoding='utf-8').strip()
+        if not url:
+            return
+
+        existing_url = self.fandom_pages.get(filepath.stem)
+        if existing_url:
+            if existing_url != url:
+                logger.info(
+                    "URL для '%s' уже зафиксирован и отличается от входного: %s",
+                    filepath.stem,
+                    existing_url,
+                )
+            return
+
+        self.fandom_pages[filepath.stem] = url
+        self.fandom_pages_updated = True
+        logger.info(
+            "Добавлено новое соответствие термина '%s' и URL %s",
+            filepath.stem,
+            url,
+        )
 
     def _calculate_file_hash(self, filepath: Path) -> str:
         hash_md5 = hashlib.md5()
@@ -317,6 +365,7 @@ class IndexUpdater:
             return
 
         for filepath in files:
+            self._register_fandom_page(filepath)
             transformed_term = self._ensure_term_mapping(filepath.stem)
             transformed_filename = f"{transformed_term.replace(' ', '_')}{filepath.suffix}"
             destination = self.kb_dir / transformed_filename
@@ -388,10 +437,14 @@ class IndexUpdater:
                 if self.terms_map_updated:
                     self._save_terms_map()
                     self.terms_map_updated = False
+                if self.fandom_pages_updated:
+                    self._save_fandom_pages()
+                    self.fandom_pages_updated = False
                 self._save_update_log()
                 return
 
             for filepath in modified_files:
+                self._register_fandom_page(filepath)
                 transformed_term = self._ensure_term_mapping(filepath.stem)
                 doc_id = transformed_term.replace(' ', '_')
                 transformed_filename = f"{doc_id}{filepath.suffix}"
@@ -413,6 +466,7 @@ class IndexUpdater:
                     )
 
             for filepath in new_files:
+                self._register_fandom_page(filepath)
                 transformed_term = self._ensure_term_mapping(filepath.stem)
                 doc_id = transformed_term.replace(' ', '_')
                 transformed_filename = f"{doc_id}{filepath.suffix}"
@@ -438,6 +492,9 @@ class IndexUpdater:
             if self.terms_map_updated:
                 self._save_terms_map()
                 self.terms_map_updated = False
+            if self.fandom_pages_updated:
+                self._save_fandom_pages()
+                self.fandom_pages_updated = False
 
             self.stats["end_time"] = datetime.now()
             self.stats["total_chunks"] = len(self.chunks)
