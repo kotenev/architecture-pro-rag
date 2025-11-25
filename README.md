@@ -466,20 +466,36 @@ def post_filter(self, text: str) -> Tuple[bool, str]:
 
 Источник: Локальная папка knowledge_base/ с подпапкой incoming/ для новых документов
 
-Схема работы:
-- Новые документы помещаются в knowledge_base/incoming/
-- Скрипт сканирует папку, обрабатывает новые файлы
-- После обработки файлы перемещаются в основную папку knowledge_base/
-- Ведётся реестр обработанных файлов в index/processed_files.json
+Схема работы Python-скрипта src/update_index.py:
+
+- новые документы помещаются в knowledge_base/incoming/;
+- скрипт сканирует папку, обрабатывает новые файлы;
+- после обработки файлы перемещаются в основную папку knowledge_base/;
+- ведётся реестр обработанных файлов в index/processed_files.json .
 
 2. Настроенный cron
 
-```bash
+```shell
 # Добавляем задачу для запуска каждый день в 6:00 утра
 0 6 * * * cd /home/ubuntu/rag-bot && ./update_index_cron.sh
 ```
 
 3. Рабочее обновление индекса
+
+Для полноценной работы скрипта обновления с требуемыми Python-библиотеками из виртуального окружения .venv сделан специальный bash-скрипт:
+```shell
+#!/usr/bin/env bash
+set -euo pipefail
+
+REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$REPO_DIR"
+
+VENV_PY="$REPO_DIR/.venv/bin/python"
+LOG_DIR="$REPO_DIR/logs"
+mkdir -p "$LOG_DIR"
+
+"$VENV_PY" src/update_index.py >> "$LOG_DIR/cron.log" 2>&1
+```
 
 4. Диаграмма, которая объясняет архитектуру и поток данных.
 
