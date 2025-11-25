@@ -61,6 +61,7 @@
 В репозитории https://github.com/kotenev/architecture-pro-rag (branch: rag) опубликован Python-script src/ragbot.py (https://github.com/kotenev/architecture-pro-rag/blob/rag/src/rag_bot.py), в котором реализован класс `RAGBot` со следующими компонентами:
 
 #### 1. Загрузка индекса
+
 ```python
 def _load_index(self, index_dir: Path) -> Tuple[faiss.Index, List[DocumentChunk]]:
     meta_path = index_dir / "metadata.json"
@@ -462,16 +463,29 @@ def post_filter(self, text: str) -> Tuple[bool, str]:
 ## Задание 6. Автоматическое ежедневное обновление базы знаний
 
 1. Скрипт обновления индекса
- 
+
+Источник: Локальная папка knowledge_base/ с подпапкой incoming/ для новых документов
+
+Схема работы:
+- Новые документы помещаются в knowledge_base/incoming/
+- Скрипт сканирует папку, обрабатывает новые файлы
+- После обработки файлы перемещаются в основную папку knowledge_base/
+- Ведётся реестр обработанных файлов в index/processed_files.json
+
 2. Настроенный cron
+
+```bash
 # Добавляем задачу для запуска каждый день в 6:00 утра
-0 6 * * * cd /path/to/architecture-pro-rag && /usr/bin/python3 src/update_index.py >> logs/cron.log 2>&1
+0 6 * * * 0 6 * * * cd /home/ubuntu/rag-bot && ./update_index_cron.sh
+```
 
 3. Рабочее обновление индекса
 
 4. Диаграмма, которая объясняет архитектуру и поток данных.
 
-5. Пример лога.
+#### [Диаграмма архитектуры index_update.py](https://github.com/kotenev/architecture-pro-rag/blob/rag/diagram/rag_index_update_architecture.puml)
+
+6. Пример лога.
 
 ```
 2025-11-24 22:38:31,298 - sentence_transformers.SentenceTransformer - INFO - Use pytorch device_name: mps
