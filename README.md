@@ -476,7 +476,7 @@ def post_filter(self, text: str) -> Tuple[bool, str]:
 
 ```bash
 # Добавляем задачу для запуска каждый день в 6:00 утра
-0 6 * * * 0 6 * * * cd /home/ubuntu/rag-bot && ./update_index_cron.sh
+0 6 * * * cd /home/ubuntu/rag-bot && ./update_index_cron.sh
 ```
 
 3. Рабочее обновление индекса
