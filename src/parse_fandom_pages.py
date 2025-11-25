@@ -11,6 +11,8 @@ from bs4 import BeautifulSoup
 from faker import Faker
 import pymorphy2
 
+from config import KB_DIR, TERMS_MAP_FILE, FANDOM_PAGES_FILE
+
 if not hasattr(inspect, "getargspec"):
     from collections import namedtuple
 
@@ -27,9 +29,8 @@ if not hasattr(inspect, "getargspec"):
 fake = Faker('ru_RU')
 morph = pymorphy2.MorphAnalyzer()
 
-BASE_DIR = Path(__file__).resolve().parent
-TERMS_MAP_PATH = BASE_DIR / "terms_map.json"
-FANDOM_PAGES_PATH = BASE_DIR / "fandom_pages.json"
+TERMS_MAP_PATH = Path(TERMS_MAP_FILE) if TERMS_MAP_FILE else Path("terms_map.json")
+FANDOM_PAGES_PATH = Path(FANDOM_PAGES_FILE) if FANDOM_PAGES_FILE else Path("fandom_pages.json")
 
 WORD_TOKEN_RE = re.compile(r'[А-Яа-яЁё-]+')
 TOKENIZER_RE = re.compile(r'[А-Яа-яЁё-]+|[^А-Яа-яЁё-]+')
@@ -224,7 +225,7 @@ def _load_fandom_pages(path: Path) -> Dict[str, str]:
 
 def process_fandom_pages(
     pages,
-    knowledge_base_dir: str = 'knowledge_base',
+    knowledge_base_dir: str = KB_DIR or 'knowledge_base',
     use_terms_map_only: bool = False,
 ):
     knowledge_base_path = Path(knowledge_base_dir)
