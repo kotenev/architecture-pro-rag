@@ -14,7 +14,7 @@ from sentence_transformers import SentenceTransformer
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from faker import Faker
 
-from src.parse_fandom_pages import TermReplacement, replace_terms
+from parse_fandom_pages import TermReplacement, replace_terms
 
 from config import (
     EMBED_MODEL,
