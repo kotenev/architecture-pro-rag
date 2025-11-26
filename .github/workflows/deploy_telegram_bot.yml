@@ -1,0 +1,106 @@
+name: Deploy Telegram bot to Minikube in Yandex Cloud
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+env:
+  IMAGE_NAME: rag-telegram-bot
+  DEPLOYMENT_NAME: rag-telegram-bot
+
+jobs:
+  build-and-deploy:
+    name: Build image and deploy to Minikube
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      REGISTRY: cr.yandex/${{ secrets.YC_REGISTRY_ID }}
+      K8S_NAMESPACE: ${{ secrets.YC_K8S_NAMESPACE }}
+      VM_USER: ${{ secrets.YC_VM_USER }}
+      VM_HOST: ${{ secrets.YC_VM_IP }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Yandex Container Registry
+        uses: yc-actions/yc-cr-login@v3
+        with:
+          yc-sa-json-key: ${{ secrets.YC_SA_JSON_KEY }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: |
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha
+            type=raw,value=latest
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Remember image with commit tag
+        id: image
+        run: echo "image=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}" >> "$GITHUB_OUTPUT"
+
+      - name: Prepare SSH key for VM access
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.YC_VM_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          touch ~/.ssh/known_hosts
+
+      - name: Copy Kubernetes manifests to VM
+        env:
+          VM_USER: ${{ env.VM_USER }}
+          VM_HOST: ${{ env.VM_HOST }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST "mkdir -p ~/rag-telegram-bot/manifests"
+          rsync -avz --delete -e "ssh -o StrictHostKeyChecking=no" k8s/ $VM_USER@$VM_HOST:~/rag-telegram-bot/manifests/
+
+      - name: Deploy to Minikube cluster
+        env:
+          VM_USER: ${{ env.VM_USER }}
+          VM_HOST: ${{ env.VM_HOST }}
+          IMAGE: ${{ steps.image.outputs.image }}
+          K8S_NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          DEPLOYMENT_NAME: ${{ env.DEPLOYMENT_NAME }}
+        run: |
+          ssh -o StrictHostKeyChecking=no $VM_USER@$VM_HOST <<EOF
+          set -euo pipefail
+
+          IMAGE="${IMAGE}"
+          NAMESPACE="${K8S_NAMESPACE}"
+          DEPLOYMENT="${DEPLOYMENT_NAME}"
+          MANIFEST_DIR="$HOME/rag-telegram-bot/manifests"
+
+          if [ ! -d "$MANIFEST_DIR" ]; then
+            echo "Manifest directory $MANIFEST_DIR not found"
+            exit 1
+          fi
+
+          if [ -n "$NAMESPACE" ]; then
+            kubectl apply -n "$NAMESPACE" -f "$MANIFEST_DIR"
+            kubectl set image deployment/$DEPLOYMENT bot=$IMAGE -n "$NAMESPACE"
+            kubectl rollout status deployment/$DEPLOYMENT -n "$NAMESPACE"
+          else
+            kubectl apply -f "$MANIFEST_DIR"
+            kubectl set image deployment/$DEPLOYMENT bot=$IMAGE
+            kubectl rollout status deployment/$DEPLOYMENT
+          fi
+          EOF

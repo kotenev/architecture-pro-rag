@@ -1,0 +1,63 @@
+@startuml RAG Index Update Architecture
+
+!define RECTANGLE class
+!define DATABASE class
+!define PROCESS component
+
+title Архитектура автоматического обновления индекса RAG
+
+rectangle "Источники данных" {
+  database "knowledge_base/incoming/" as incoming #lightblue
+  note right of incoming: Папка для новых\nдокументов
+}
+
+rectangle "Процесс обновления" {
+  PROCESS "update_index.py" as updater #lightgreen
+  PROCESS "SentenceTransformer" as embedder #yellow
+  PROCESS "Text Splitter" as splitter #yellow
+  PROCESS "Terms Replacer" as replacer #yellow
+}
+
+rectangle "Хранилища" {
+  database "knowledge_base/" as kb #lightblue
+  database "index/faiss.index" as faiss #orange
+  database "index/metadata.json" as metadata #orange
+  database "index/processed_files.json" as processed #orange
+  database "logs/*.log" as logs #gray
+}
+
+rectangle "Планировщик" {
+  PROCESS "Cron/Systemd Timer" as scheduler #pink
+  note bottom of scheduler: Запуск каждый день\nв 06:00
+}
+
+cloud "Monitoring" {
+  PROCESS "Log Analyzer" as monitor #lightgray
+  database "update_summary.json" as summary #gray
+}
+
+scheduler --> updater : Запускает
+incoming --> updater : Сканирует новые файлы
+updater --> splitter : Разбивает на чанки
+updater --> replacer : Заменяет термины
+splitter --> embedder : Генерирует эмбеддинги
+embedder --> faiss : Обновляет индекс
+updater --> metadata : Обновляет метаданные
+updater --> processed : Сохраняет хеши файлов
+updater --> kb : Перемещает обработанные
+updater --> logs : Записывает логи
+logs --> monitor : Анализ
+monitor --> summary : Статистика
+
+note top of updater
+  Алгоритм работы:
+  1. Сканирование incoming/
+  2. Проверка хешей файлов
+  3. Обработка новых/изменённых
+  4. Генерация эмбеддингов
+  5. Обновление FAISS индекса
+  6. Перемещение файлов
+  7. Логирование результатов
+end note
+
+@enduml

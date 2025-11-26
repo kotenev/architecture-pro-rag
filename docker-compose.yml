@@ -1,0 +1,13 @@
+version: "3.9"
+
+services:
+  rag-bot:
+    image: cr.yandex/${YC_REGISTRY_ID}/rag-bot:latest
+    restart: always
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      INDEX_DIR: /app/index
+      KB_DIR: /app/knowledge_base
