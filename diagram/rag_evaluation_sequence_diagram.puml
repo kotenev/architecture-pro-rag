@@ -1,0 +1,32 @@
+@startuml RAG Evaluator Sequence Diagram
+actor User
+participant Client
+participant RAGBot
+participant "FAISS Index" as Index
+participant "YandexGPT" as LLM
+participant Logger
+participant Evaluator
+
+User -> Client: Вопрос
+Client -> RAGBot: ask(query)
+
+RAGBot -> RAGBot: normalize_terms()
+RAGBot -> Index: search(query_vector)
+Index --> RAGBot: chunks[]
+
+alt чанки найдены
+    RAGBot -> LLM: generate(prompt)
+    LLM --> RAGBot: answer_text
+else нет чанков
+    RAGBot -> RAGBot: Ответ "Я не знаю"
+end
+
+RAGBot -> Evaluator: compute_success()
+Evaluator --> RAGBot: success_flag
+
+RAGBot -> Logger: write(log.jsonl)
+Logger --> RAGBot: ok
+
+RAGBot --> Client: Ответ
+Client --> User: показать
+@enduml
