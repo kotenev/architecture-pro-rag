@@ -3,6 +3,10 @@ import json
 from pathlib import Path
 from typing import Dict, Any, List, Tuple
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from src.rag_bot import RAGBot
 from src.config import INDEX_DIR, FEWSHOT_FILE, BASE_DIR
 from src.logging_utils import log_interaction, compute_success_flag
